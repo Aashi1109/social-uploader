@@ -1,0 +1,165 @@
+// Prisma schema for social-uploader MVP
+
+generator client {
+    provider   = "prisma-client-js"
+    output     = "./generated"
+    engineType = "client"
+}
+
+datasource db {
+    provider = "postgresql"
+    url      = env("DATABASE_URL")
+}
+
+model Project {
+    id         String   @id
+    slug       String   @unique
+    name       String
+    webhookUrl String?  @map("webhook_url")
+    createdAt  DateTime @default(now()) @map("created_at")
+
+    platforms Platform[]
+
+    @@map("projects")
+}
+
+model Platform {
+    id                 String   @id @default(cuid())
+    projectId          String   @map("project_id")
+    name               String // instagram | youtube | ...
+    enabled            Boolean  @default(true)
+    // Media profile fields (structured)
+    maxDurationSeconds Int?
+    minAspectRatio     Float?
+    maxAspectRatio     Float?
+    maxFileSizeMB      Int?
+    // Raw JSON profiles and limits
+    mediaProfile       Json?    @map("media_profile")
+    credsRef           String?  @map("creds_ref")
+    mapping            Json?    @map("mapping")
+    limits             Json?
+    createdAt          DateTime @default(now()) @map("created_at")
+    updatedAt          DateTime @updatedAt @map("updated_at")
+
+    project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+    @@unique([projectId, name])
+    @@index([projectId])
+    @@map("project_platforms")
+}
+
+model Secret {
+    id             String   @id @default(cuid())
+    scope          String // global | project:{id}
+    type           String // instagram | youtube | custom
+    version        Int      @default(1)
+    data_encrypted String
+    meta           Json?
+    createdAt      DateTime @default(now()) @map("created_at")
+
+    @@index([scope])
+    @@index([type])
+    @@map("secrets")
+}
+
+model Trace {
+    id              String    @id @default(cuid()) @map("trace_id")
+    projectId       String    @map("project_id")
+    idempotencyKey  String?   @map("idempotency_key")
+    status          String // running | success | partial | failed (current runtime status)
+    finalStatus     String?   @map("final_status") // optional mirror of status for audit
+    totalStages     Int       @default(0) @map("total_stages")
+    completedStages Int       @default(0) @map("completed_stages")
+    payload         Json?     @map("payload")
+    createdAt       DateTime  @default(now()) @map("created_at")
+    updatedAt       DateTime  @updatedAt @map("updated_at")
+    endedAt         DateTime? @map("ended_at")
+    durationMs      Int?      @map("duration_ms")
+
+    stages Stage[]
+    steps  Step[]
+    events Event[]
+
+    @@unique([projectId, idempotencyKey])
+    @@index([projectId])
+    @@map("traces")
+}
+
+model Stage {
+    id                String    @id @default(cuid()) @map("stage_id")
+    traceId           String    @map("trace_id")
+    parentStageId     String?   @map("parent_stage_id")
+    kind              String // master | platform
+    name              String // master | instagram | youtube | ...
+    status            String // running | completed | failed
+    progressCompleted Int       @default(0) @map("progress_completed")
+    progressTotal     Int       @default(0) @map("progress_total")
+    attempt           Int       @default(0)
+    attrs             Json?     @map("attrs")
+    startedAt         DateTime  @default(now()) @map("started_at")
+    endedAt           DateTime? @map("ended_at")
+    durationMs        Int?      @map("duration_ms")
+    error             Json?
+    // Back-compat fields
+    platform          String? // optional
+    order             Int       @default(0)
+
+    trace    Trace   @relation(fields: [traceId], references: [id], onDelete: Cascade)
+    parent   Stage?  @relation("StageToStage", fields: [parentStageId], references: [id])
+    children Stage[] @relation("StageToStage")
+    steps    Step[]
+    events   Event[]
+
+    @@index([traceId])
+    @@map("stages")
+}
+
+model Step {
+    id         String    @id @default(cuid()) @map("step_id")
+    traceId    String    @map("trace_id")
+    stageId    String    @map("stage_id")
+    name       String // prep | upload | publish
+    status     String // running | completed | failed | skipped
+    startedAt  DateTime  @default(now()) @map("started_at")
+    endedAt    DateTime? @map("ended_at")
+    durationMs Int?      @map("duration_ms")
+    meta       Json?
+    error      Json?
+    createdAt  DateTime  @default(now()) @map("created_at")
+    updatedAt  DateTime  @updatedAt @map("updated_at")
+
+    stage  Stage   @relation(fields: [stageId], references: [id], onDelete: Cascade)
+    trace  Trace   @relation(fields: [traceId], references: [id], onDelete: Cascade)
+    events Event[]
+
+    @@index([stageId])
+    @@index([traceId])
+    @@map("steps")
+}
+
+model Event {
+    id         String   @id @default(cuid()) @map("event_id")
+    traceId    String   @map("trace_id")
+    stageId    String?  @map("stage_id")
+    stepId     String?  @map("step_id")
+    timestamp  DateTime @default(now())
+    name       String
+    level      String?
+    data       Json?
+    // Back-compat fields used by code today
+    platform   String?
+    step       String?
+    status     String?
+    durationMs Int?
+    meta       Json?
+    createdAt  DateTime @default(now()) @map("created_at")
+
+    trace   Trace  @relation(fields: [traceId], references: [id], onDelete: Cascade)
+    stage   Stage? @relation(fields: [stageId], references: [id])
+    stepRel Step?  @relation(fields: [stepId], references: [id])
+
+    @@index([traceId, timestamp])
+    @@index([stageId, timestamp])
+    @@index([name])
+    @@map("events")
+}

@@ -1,0 +1,118 @@
+Project: Social Uploader (Express + BullMQ + Prisma)
+
+High-level contracts
+- API: Express TypeScript. POST /v1/publish (Bearer auth, zod validation, idempotent), GET /v1/publish/:id (timeline view). Rate limit: 30 req/min on POST.
+- Queues: BullMQ with ioredis. Queues: master, publish, media-prep. Use QueueEvents when awaiting job completion.
+- Workers: Dynamic loader in src/core/loader.ts. WORKER_NAME filters by substring. Master → enqueues one publish job per enabled platform. Platform workers: instagram, youtube. Media-prep worker optionally normalizes media.
+- Events & trace: Emit canonical events for timeline. Trace writer (src/core/trace.ts) persists events and updates traces/stages/steps. It must tolerate out-of-order arrivals (ensure trace exists).
+- Secrets: Local AES-256-GCM with MASTER_KEY (64 hex). Never log decrypted data. Use SecretManager (src/core/secrets.ts).
+- Logging & metrics: Pino + pino-http; JSON logs. Prometheus metrics at /metrics using prom-client.
+- Docker compose: Only api and workers. Postgres and Redis are external (configured via env).
+
+TypeScript & style
+- Strict TypeScript; no implicit any. Prefer explicit types for map callback params.
+- Path aliases (MUST use):
+  - "@api/*" → src/api/*
+  - "@core/*" → src/core/*
+  - "@workers/*" → src/workers/*
+  - "@shared/*" → src/shared/*
+  - "@/prisma" → Prisma client index (see Prisma section)
+- Do not introduce relative imports crossing feature boundaries. Prefer aliases.
+- Keep edits minimal and focused; do not reformat unrelated code. Preserve existing indentation and style.
+- Names: functions are verbs, variables are nouns. Avoid abbreviations.
+
+Prisma & database
+- Client generation:
+  - schema: src/prisma/schema.prisma
+  - generator output: src/prisma/generated (engineType=client)
+  - Import client via: import prisma from "@/prisma"
+- Table mapping: Use @@map/@map to keep snake_case table/column names while keeping camelCase in code.
+- Core tables (MUST exist, with mapped names):
+  - projects (@@map("projects")):
+    - id (pk), slug (unique), name, webhook_url?, created_at
+  - project_platforms (@@map("project_platforms")):
+    - id (pk), project_id (fk), name (platform), enabled
+    - media_profile jsonb, creds_ref text?, mapping jsonb?, limits jsonb?
+    - created_at, updated_at
+  - secrets (@@map("secrets")):
+    - id, scope, type, version, data_encrypted text, meta jsonb?, created_at
+  - traces (@@map("traces")):
+    - trace_id (pk id), project_id (fk), idempotency_key?, status, final_status?
+    - total_stages, completed_stages, payload jsonb
+    - created_at, updated_at, ended_at?, duration_ms?
+    - Unique: (project_id, idempotency_key)
+  - stages (@@map("stages")):
+    - stage_id (pk), trace_id (fk), parent_stage_id?, kind (master|platform)
+    - name, status, progress_completed, progress_total, attempt, attrs jsonb
+    - started_at, ended_at?, duration_ms?, error jsonb?
+    - (back-compat) platform?, order
+  - steps (@@map("steps")):
+    - step_id (pk), trace_id (fk), stage_id (fk), name (prep|upload|publish)
+    - status, started_at, ended_at?, duration_ms?, meta jsonb, error jsonb?
+    - created_at, updated_at
+  - events (@@map("events")):
+    - event_id (pk), trace_id (fk), stage_id? (fk), step_id? (fk)
+    - timestamp, name (canonical), level?, data jsonb
+    - (back-compat) platform?, step?, status?, duration_ms?, meta jsonb?
+    - created_at
+    - Indexes: (trace_id,timestamp), (stage_id,timestamp), (name)
+- Config resolution:
+  - Prefer DB-backed config: load projects + project_platforms for enabled platforms and media profiles.
+  - Fallback to in-code default only if DB rows absent.
+- Migrations:
+  - Do not break existing columns or mappings. Add new fields as nullable with defaults.
+  - Keep idempotency unique (project_id,idempotency_key) intact.
+
+API contracts
+- POST /v1/publish:
+  - Auth: Authorization: Bearer <token> (tokens in API_TOKENS).
+  - Body (zod): { projectId, mediaUrl (url), idempotencyKey?, title?, description?, platforms? }
+  - Behavior: create trace (if not idempotent hit), emit publish.request.received, enqueue master job. Return { requestId }.
+- GET /v1/publish/:id:
+  - Return trace, stages (with steps), events ordered asc by timestamp.
+- Rate limit: publish POST limited to 30/min/IP. Keep this in place.
+
+Queues & workers
+- master queue: Creates one publish job per enabled platform. No polling loops in workers; rely on events and DB for progress.
+- publish queue: One job per platform. Platform workers MUST emit:
+  - platform.started → prep.*, upload.*, publish.* → platform.finished
+  - On success: emit publish.completed (once all platforms done via master or coordinator logic).
+- media-prep queue: Inspect and normalize only as needed. Emit prep.started / prep.done (or .skipped).
+- Use QueueEvents when awaiting job completion (e.g., waitUntilFinished(queueEvents)).
+
+Event model (canonical)
+- Names (must use): publish.request.received, publish.request.validated, publish.request.queued, platform.started, prep.started, prep.done, prep.failed, prep.skipped, upload.started, upload.done, upload.failed, publish.started, publish.done, publish.failed, platform.finished, publish.completed
+- Each event includes: timestamp, traceId, projectId, platform?, step?, status?, duration_ms?, meta?
+- Trace writer responsibilities:
+  - Ensure trace exists for event (bootstrap if event arrives first).
+  - Persist to events table (append-only).
+  - Update stages/steps based on events and compute progress (completed/total).
+  - Set final statuses and endedAt/duration when applicable.
+
+Secrets
+- Only use SecretManager (src/core/secrets.ts). Do not read raw env for platform creds.
+- Encrypt with AES-256-GCM (MASTER_KEY 64 hex). Never log decrypted secrets.
+- Scopes: global → fallback; project:{id} → preferred. Version by increment.
+
+Logging & metrics
+- Pino logger; pino-http for requests. Keep requestId support (X-Request-Id fallback to uuid).
+- Metrics via prom-client; expose /metrics. Default counters/histograms for publish and prep duration.
+
+Do/Don’t checklist
+- Do keep path aliases; prefer "@/prisma" for Prisma client access.
+- Do validate inputs with zod; return 400 with flatten() details on invalid payloads.
+- Do keep idempotency behavior and DB unique constraint.
+- Do not add Postgres/Redis services back into docker-compose.yml.
+- Do not emit logs with raw secrets or payloads containing sensitive tokens.
+- Do not turn off TypeScript strictness or relax eslint rules to bypass errors.
+
+Quality gates
+- Lint/typecheck passes with zero errors.
+- prisma:generate and prisma migrate deploy must succeed.
+- POST /v1/publish returns { requestId }; GET /v1/publish/:id reflects evolving timeline as workers run.
+
+When extending
+- Adding a new platform: create <platform>.worker.ts emitting canonical events; add platform config row(s) under project_platforms; no changes to API or master worker orchestration logic required.
+- Adding new secret type: store in secrets with type=<platform/custom>, encrypt via SecretManager; retrieve by scope with project fallback to global.
+
+
