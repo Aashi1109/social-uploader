@@ -1,4 +1,5 @@
 import type { JsonSchema } from "@/shared/types/json";
+import { PLATFORM_TYPES } from "../constants";
 
 // Single-source-of-truth schemas with x-meta annotations for UI
 // x-meta at root: { displayName, description }
@@ -8,16 +9,25 @@ export type YouTubeSecret = {
   clientSecret: string;
   refreshToken: string;
   channelId?: string;
+
+  tokens?: {
+    access_token: string;
+    refresh_token: string;
+    expires_in: number;
+    token_type: string;
+    refresh_token_expires_in: number;
+  };
 };
+
 export type InstagramSecret = {
   appId: string;
   appSecret: string;
-  accessToken: string;
+  tokens: string;
   businessAccountId: string;
 };
 
-export const SECRET_SCHEMAS: Record<string, JsonSchema> = {
-  instagram: {
+export const PLATFORM_SCHEMAS: Record<PLATFORM_TYPES, JsonSchema> = {
+  [PLATFORM_TYPES.INSTAGRAM]: {
     $id: "secrets/instagram",
     type: "object",
     additionalProperties: false,
@@ -50,7 +60,7 @@ export const SECRET_SCHEMAS: Record<string, JsonSchema> = {
       },
     },
   },
-  youtube: {
+  [PLATFORM_TYPES.YOUTUBE]: {
     $id: "secrets/youtube",
     type: "object",
     additionalProperties: false,
@@ -58,7 +68,7 @@ export const SECRET_SCHEMAS: Record<string, JsonSchema> = {
       displayName: "YouTube",
       description: "Google OAuth credentials for YouTube Data API publishing.",
     },
-    required: ["clientId", "clientSecret", "refreshToken"],
+    required: ["clientId", "clientSecret"],
     properties: {
       clientId: {
         type: "string",
@@ -98,7 +108,7 @@ export function listTemplateDescriptors(): Array<{
   description?: string;
   fields: FieldMeta[];
 }> {
-  return Object.entries(SECRET_SCHEMAS).map(([type, schema]) => {
+  return Object.entries(PLATFORM_SCHEMAS).map(([type, schema]) => {
     const meta = (schema as any)["x-meta"] || {};
     const required: string[] = Array.isArray((schema as any).required)
       ? ((schema as any).required as string[])
@@ -123,6 +133,5 @@ export function listTemplateDescriptors(): Array<{
   });
 }
 
-export function getSchema(type: string): JsonSchema | undefined {
-  return SECRET_SCHEMAS[type];
-}
+export const getSchema = (type: string) =>
+  PLATFORM_SCHEMAS[type as PLATFORM_TYPES];

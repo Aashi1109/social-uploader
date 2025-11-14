@@ -8,7 +8,10 @@ export const API_TOKENS = (
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
-export const MASTER_KEY_HEX = process.env.MASTER_KEY || "";
+
+export enum REDIS_CONNECTION_NAMES {
+  Default = "default",
+}
 
 export const QUEUE_NAMES = {
   master: "master",
@@ -39,10 +42,10 @@ export enum EventName {
 }
 
 // Known platform identifiers
-export const PLATFORM_NAMES = {
-  instagram: "instagram",
-  youtube: "youtube",
-} as const;
+export enum PLATFORM_TYPES {
+  INSTAGRAM = "instagram",
+  YOUTUBE = "youtube",
+}
 
 // Known step names
 export const STEP_NAMES = {
@@ -50,3 +53,41 @@ export const STEP_NAMES = {
   upload: "upload",
   publish: "publish",
 } as const;
+
+// OAuth/Secrets provisioning enums
+export const SECRET_PROVISION_STATUS = {
+  pending: "pending",
+  completed: "completed",
+  failed: "failed",
+} as const;
+
+export type SecretProvisionStatus =
+  (typeof SECRET_PROVISION_STATUS)[keyof typeof SECRET_PROVISION_STATUS];
+
+export const OAUTH_PROVIDERS = {
+  youtube: "youtube",
+} as const;
+export type OAuthProvider =
+  (typeof OAUTH_PROVIDERS)[keyof typeof OAUTH_PROVIDERS];
+
+export const OAUTH_STATE_KIND = {
+  secretProvision: "secret_provision",
+} as const;
+
+export type OAuthStateKind =
+  (typeof OAUTH_STATE_KIND)[keyof typeof OAUTH_STATE_KIND];
+
+export enum OAUTH_STEP_TYPES {
+  Authorization = "authorization",
+}
+
+export const CACHE_NAMESPACE_CONFIG = {
+  Secrets: {
+    namespace: "secrets",
+    ttl: 3600 * 24,
+  },
+  PendingSecrets: {
+    namespace: "pending-secrets",
+    ttl: 3600,
+  },
+};

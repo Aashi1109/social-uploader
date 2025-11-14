@@ -1,14 +1,36 @@
-import { z } from 'zod';
+import type { ErrorObject, JSONSchemaType } from "ajv";
+import type { ValidateFunction } from "ajv";
+import ajv from "@/shared/ajv";
+import { BadRequestError } from "@/exceptions";
 
-export const PublishRequestSchema = z.object({
-	projectId: z.string().min(1),
-	mediaUrl: z.string().url(),
-	idempotencyKey: z.string().min(1).optional(),
-	title: z.string().max(200).optional(),
-	description: z.string().max(2000).optional(),
-	platforms: z.array(z.enum(['instagram', 'youtube'])).optional(),
-});
+export function ajvErrorsToIssues(errors: ErrorObject[] | null | undefined) {
+  if (!errors) return [];
+  return errors.map((e) => ({
+    path: e.instancePath || e.schemaPath || "",
+    message: e.message || "invalid",
+  }));
+}
 
-export type PublishRequest = z.infer<typeof PublishRequestSchema>;
-
-
+/**
+ * Validate data against an AJV validator or raw schema.
+ * Throws BadRequestError("invalid_schema") with formatted issues on failure.
+ */
+export function validateOrThrow<T>(
+  validatorOrSchema: ValidateFunction | JSONSchemaType<any> | any,
+  data: unknown,
+  _name?: string
+): T {
+  let validate: ValidateFunction;
+  if (typeof validatorOrSchema === "function") {
+    validate = validatorOrSchema as ValidateFunction;
+  } else {
+    validate = ajv.compile(validatorOrSchema);
+  }
+  const valid = validate(data);
+  if (!valid) {
+    throw new BadRequestError("invalid_schema", undefined, {
+      issues: ajvErrorsToIssues((validate as any).errors),
+    });
+  }
+  return data as T;
+}

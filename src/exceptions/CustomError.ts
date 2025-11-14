@@ -31,8 +31,8 @@ class CustomError extends Error {
    */
   constructor(
     message: string,
-    status: number = 500,
-    additionalInfo: any = undefined
+    additionalInfo: any = undefined,
+    status: number = 500
   ) {
     super(message);
     Object.setPrototypeOf(this, CustomError.prototype);

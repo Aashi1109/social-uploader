@@ -1,16 +1,16 @@
 import crypto from "node:crypto";
-import { MASTER_KEY_HEX } from "../constants";
 import type { JsonValue } from "@/shared/types/json";
+import config from "@/config";
 
 const ALGO = "aes-256-gcm";
 const IV_LENGTH = 12; // recommended for GCM
 const AUTH_TAG_LENGTH = 16;
 
 function getKey(): Buffer {
-  if (!MASTER_KEY_HEX || MASTER_KEY_HEX.length !== 64) {
+  if (!config.masterKey || config.masterKey.length !== 64) {
     throw new Error("MASTER_KEY must be a 32-byte hex string (64 hex chars)");
   }
-  return Buffer.from(MASTER_KEY_HEX, "hex");
+  return Buffer.from(config.masterKey, "hex");
 }
 
 export function encryptAesGcm(plaintext: JsonValue): string {

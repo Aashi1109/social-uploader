@@ -1,53 +1,68 @@
 import { Router } from "express";
-import { bearerAuth } from "@/api/middleware";
+import { asyncHandler, bearerAuth } from "@/api/middleware";
 import secretsService from "@/features/secret/service";
 import { BadRequestError, NotFoundError } from "@/exceptions";
+import { PLATFORM_TYPES } from "@/shared/constants";
+import { validateSecretCreateBody } from "@/features/secret/validation";
 
 const router = Router();
 
-router.get("/secrets/templates", (_req, res) => {
-  const templates = secretsService.listTemplates();
-  return res.json({ templates });
-});
+router.get(
+  "/templates",
+  asyncHandler((_req, res) => {
+    const templates = secretsService.listTemplates();
+    return res.json({ templates });
+  })
+);
 
-router.get("/secrets/templates/:type", (req, res) => {
-  const tpl = secretsService.getTemplate(req.params.type);
-  if (!tpl) throw new NotFoundError("Template not found");
-  return res.json({ template: tpl });
-});
+router.get(
+  "/templates/:type",
+  asyncHandler((req, res) => {
+    const tpl = secretsService.getTemplate(req.params.type as string);
+    if (!tpl) throw new NotFoundError("Template not found");
+    return res.json({ template: tpl });
+  })
+);
 
-router.post("/secrets/validate", bearerAuth, async (req, res) => {
-  const type = String(req.body?.type || "");
-  const data = (req.body?.data as any) || {};
-  const result = await secretsService.validateAndVerify(type, data);
-  if (!result.schema.valid) {
-    throw new BadRequestError("invalid_schema", 400, {
-      issues: result.schema.issues,
+router.post(
+  "/validate",
+  bearerAuth,
+  asyncHandler(async (req, res) => {
+    const { type, data } = req.body;
+    const result = await secretsService.validateAndVerify({
+      type: type as PLATFORM_TYPES,
+      data,
     });
-  }
-  if (!result.vendor.ok) {
-    throw new BadRequestError("invalid_credentials", 400, {
-      vendor: result.vendor.details,
-    });
-  }
-  return res.json({ valid: true, vendor: result.vendor });
-});
 
-router.post("/secrets", bearerAuth, async (req, res) => {
-  const scope = String(req.body?.scope || "");
-  const type = String(req.body?.type || "");
-  const data = (req.body?.data as any) || {};
-  const meta = (req.body?.meta as any) || undefined;
-  if (!scope || !type || typeof data !== "object") {
-    throw new BadRequestError("invalid_payload", 400);
-  }
-  const { version } = await secretsService.createSecret({
-    scope,
-    type,
-    data,
-    meta,
-  });
-  return res.status(201).json({ version });
-});
+    if (!result.schema.valid) {
+      throw new BadRequestError("invalid_schema", {
+        issues: result.schema.issues,
+      });
+    }
+    if (result.vendor.errors) {
+      throw new BadRequestError("invalid_credentials", {
+        vendor: result.vendor.errors,
+      });
+    }
+    return res.json({ valid: true, vendor: result.vendor });
+  })
+);
+
+router.post(
+  "/",
+  bearerAuth,
+  [validateSecretCreateBody],
+  asyncHandler(async (req, res) => {
+    const { scope, type, data, meta, projectId } = req.body;
+    const result = await secretsService.createSecret({
+      scope,
+      type,
+      data,
+      meta,
+      projectId,
+    });
+    return res.status(201).json(result);
+  })
+);
 
 export default router;

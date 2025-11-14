@@ -1,3 +1,8 @@
+import { REDIS_CONNECTION_NAMES } from "@/shared/constants";
+import { config as loadEnv } from "dotenv";
+
+loadEnv();
+
 const isProduction = process.env.NODE_ENV === "production";
 
 const config = {
@@ -6,9 +11,11 @@ const config = {
     url: process.env.DATABASE_URL,
   },
   redis: {
-    host: process.env.REDIS_HOST,
-    port: Number(process.env.REDIS_PORT),
-    password: process.env.REDIS_PASSWORD,
+    [REDIS_CONNECTION_NAMES.Default]: {
+      host: process.env.REDIS_HOST || "",
+      token: process.env.REDIS_PASSWORD || "",
+      port: Number(process.env.REDIS_PORT),
+    },
   },
   masterKey: process.env.MASTER_KEY,
   port: Number(process.env.PORT),
@@ -49,7 +56,8 @@ const config = {
       },
     },
     youtube: {
-      requiredScopes: process.env.YOUTUBE_REQUIRED_SCOPES,
+      requiredScopes: process.env.YOUTUBE_REQUIRED_SCOPES?.split(","),
+      redirectUri: process.env.YOUTUBE_REDIRECT_URI,
     },
   },
 };

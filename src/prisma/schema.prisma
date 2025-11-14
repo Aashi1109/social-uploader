@@ -24,10 +24,12 @@ model Project {
 }
 
 model Platform {
-    id                 String   @id @default(cuid())
-    projectId          String   @map("project_id")
-    name               String // instagram | youtube | ...
-    enabled            Boolean  @default(true)
+    id        String  @id @default(cuid())
+    projectId String  @map("project_id")
+    name      String // instagram | youtube | ...
+    enabled   Boolean @default(true)
+
+    config             Json?
     // Media profile fields (structured)
     maxDurationSeconds Int?
     minAspectRatio     Float?
@@ -56,6 +58,7 @@ model Secret {
     data_encrypted String
     meta           Json?
     createdAt      DateTime @default(now()) @map("created_at")
+    tokens         String?  @map("tokens")
 
     @@index([scope])
     @@index([type])

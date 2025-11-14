@@ -9,11 +9,8 @@ import { Readable } from "stream";
 import { stat } from "fs/promises";
 import { createReadStream } from "node:fs";
 import { validateInstagramPublishArgs } from "./validation";
+import { VendorVerifyResult } from "@/shared/interfaces";
 
-export type VendorVerifyResult = {
-  ok: boolean;
-  details?: JsonObject;
-};
 export enum MediaType {
   Carousel = "CAROUSEL",
   // Stories = "STORIES", // not yet supported
@@ -24,11 +21,6 @@ export enum CarouselChildType {
   Image = "IMAGE",
   Video = "VIDEO",
 }
-
-type ImageContainerProps = {
-  altText: string;
-  isCarouselItem?: boolean;
-};
 
 type VideoInput = {
   coverUrl?: string;
@@ -111,7 +103,7 @@ class InstagramService {
     try {
       const appId = String(data.appId || "");
       const appSecret = String(data.appSecret || "");
-      const userAccessToken = String(data.accessToken || "");
+      const userAccessToken = String(data.tokens || "");
       const businessAccountId = String(data.businessAccountId || "");
 
       const appToken = `${appId}|${appSecret}`;
@@ -121,16 +113,14 @@ class InstagramService {
       const debugRes = await fetch(debugUrl, { method: "GET" });
       if (!debugRes.ok) {
         return {
-          ok: false,
-          details: { stage: "debug_token_http", status: debugRes.status },
+          errors: { message: "Debug token is not valid" },
         };
       }
       const debugBody: any = await debugRes.json();
       const isValid = !!debugBody?.data?.is_valid;
       if (!isValid) {
         return {
-          ok: false,
-          details: { stage: "debug_token", is_valid: false },
+          errors: { message: "Debug token is not valid" },
         };
       }
 
@@ -142,20 +132,22 @@ class InstagramService {
       const acctRes = await fetch(acctUrl, { method: "GET" });
       if (!acctRes.ok) {
         return {
-          ok: false,
-          details: { stage: "business_account_http", status: acctRes.status },
+          errors: { message: "Business account is not valid" },
         };
       }
       const acctBody: any = await acctRes.json();
       if (!acctBody?.id) {
-        return { ok: false, details: { stage: "business_account_body" } };
+        return {
+          errors: { message: "Business account is not valid" },
+        };
       }
       return {
-        ok: true,
-        details: { accountId: acctBody.id, username: acctBody.username },
+        data: { accountId: acctBody.id, username: acctBody.username },
       };
-    } catch {
-      return { ok: false, details: { stage: "exception" } };
+    } catch (e: any) {
+      return {
+        errors: { message: e.message },
+      };
     }
   }
 

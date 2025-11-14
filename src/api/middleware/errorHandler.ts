@@ -1,6 +1,8 @@
-import logger from "@/logger";
+import pino from "pino";
 import CustomError from "@/exceptions/CustomError";
 import { NextFunction, Request, Response } from "express";
+
+const logger = pino();
 
 /**
  * Handles errors and sends appropriate HTTP responses.
@@ -16,7 +18,7 @@ const errorHandler = (
   res: Response,
   next: NextFunction
 ) => {
-  logger.error(err);
+  logger.error({ err, status: err?.status, message: err?.message });
 
   // Check if the error is an instance of CustomError
   if (!(err instanceof CustomError)) {

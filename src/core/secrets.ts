@@ -43,7 +43,13 @@ export class LocalAesSecretManager implements SecretManager {
     const version = (latest?.version || 0) + 1;
     const data_encrypted = this.encrypt(data);
     await prisma.secret.create({
-      data: { scope, type, version, data_encrypted, meta },
+      data: {
+        scope,
+        type,
+        version,
+        data_encrypted,
+        meta: meta as any,
+      },
     });
   }
 }

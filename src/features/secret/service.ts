@@ -1,22 +1,28 @@
 import type { ErrorObject } from "ajv";
-import prisma from "../../prisma";
+import prisma from "@/prisma";
 import { secrets } from "@/core/secrets";
 import type { JsonObject } from "@/shared/types/json";
 import { getSchema, listTemplateDescriptors } from "@/shared/secrets/schemas";
-import InstagramService from "@/features/platforms/instagram.service";
-import YouTubeService from "@/features/platforms/youtube.service";
+import { InstagramService } from "@/features/platforms/instagram";
+import YouTubeService from "@/features/platforms/youtube/service";
 import { BadRequestError } from "@/exceptions";
 import ajv from "@/shared/ajv";
 import type { InstagramSecret, YouTubeSecret } from "@/shared/secrets/schemas";
+import { PLATFORM_TYPES } from "@/shared/constants";
+import { VendorPublishResult, VendorVerifyResult } from "@/shared/interfaces";
+import { logger } from "@/core/logger";
+import { getRequestContextRequestId } from "@/api/middleware";
+import { setPendingSecretCache } from "./helpers";
+import { getUUID } from "@/shared/utils/ids";
+
 type ValidateResult = {
   valid: boolean;
   issues?: { path: string; message: string }[];
 };
 
-type VendorVerifyResult = {
-  ok: boolean;
-  details?: JsonObject;
-};
+type ValidateAndVerifyArgs =
+  | ({ type: PLATFORM_TYPES.INSTAGRAM } & { data: InstagramSecret })
+  | ({ type: PLATFORM_TYPES.YOUTUBE } & { data: YouTubeSecret });
 
 function toIssues(errors: ErrorObject[] | null | undefined) {
   if (!errors) return [];
@@ -36,6 +42,10 @@ class SecretsService {
   }
 
   validateSchema(type: string, data: JsonObject): ValidateResult {
+    logger.info({ type, data }, "Validating schema");
+
+    if (!type || !data) throw new BadRequestError("Invalid Request Body");
+
     const schema = getSchema(type);
     if (!schema) {
       return { valid: false, issues: [{ path: "", message: "unknown_type" }] };
@@ -47,59 +57,85 @@ class SecretsService {
       : { valid: false, issues: toIssues((validate as any).errors) };
   }
 
-  async validateAndVerify(
-    type: string,
-    data: JsonObject
-  ): Promise<{
+  async validateAndVerify(args: ValidateAndVerifyArgs): Promise<{
     schema: ValidateResult;
     vendor: VendorVerifyResult;
   }> {
+    const { type, data, ...restArgs } = args;
     const schema = this.validateSchema(type, data);
     if (!schema.valid) {
-      return { schema, vendor: { ok: false } };
+      return { schema, vendor: { errors: { message: "Invalid schema" } } };
     }
-    if (type === "instagram") {
-      const vendor = await InstagramService.verify(
-        data as InstagramSecret & JsonObject
+    if (type === PLATFORM_TYPES.INSTAGRAM) {
+      const instagramService = new InstagramService(
+        String(data.businessAccountId || ""),
+        String(data.tokens || "")
       );
+      const vendor = await instagramService.verify(data);
       return { schema, vendor };
     }
-    if (type === "youtube") {
-      const vendor = await YouTubeService.verify(
-        data as YouTubeSecret & JsonObject
-      );
+    if (type === PLATFORM_TYPES.YOUTUBE) {
+      const vendor = await new YouTubeService(
+        data.clientId,
+        data.clientSecret
+      ).verify({ ...data, ...restArgs } as YouTubeSecret);
       return { schema, vendor };
     }
-    // For unknown types, schema valid implies ok (no vendor check)
-    return { schema, vendor: { ok: true } };
+    return { schema, vendor: { data: { type } } };
   }
 
   async createSecret(input: {
     scope: string; // "global" | `project:{id}`
-    type: string;
-    data: JsonObject;
+    type: PLATFORM_TYPES.INSTAGRAM | PLATFORM_TYPES.YOUTUBE;
+    data: InstagramSecret | YouTubeSecret;
     meta?: JsonObject;
-  }): Promise<{ version: number }> {
-    const { type, data } = input;
-    const { schema, vendor } = await this.validateAndVerify(type, data);
+    projectId: string;
+    creationId?: string;
+    tokens?: YouTubeSecret["tokens"] | InstagramSecret["tokens"];
+  }): Promise<{ version: number; data?: VendorPublishResult }> {
+    const { type, data, ...restArgs } = input;
+    const { schema, vendor } = await this.validateAndVerify({
+      type,
+      data,
+      ...restArgs,
+    } as ValidateAndVerifyArgs);
+
     if (!schema.valid) {
-      throw new BadRequestError("invalid_schema", 400, {
+      throw new BadRequestError("invalid_schema", {
         issues: schema.issues || [],
       });
     }
-    if (!vendor.ok) {
-      throw new BadRequestError("invalid_credentials", 400, {
-        vendor: vendor.details || {},
+
+    if (vendor.data?.isIncomplete) {
+      const requestId = getRequestContextRequestId();
+      const encryptedData = secrets.encrypt({
+        ...input,
+        creationId: getUUID(),
       });
+      await setPendingSecretCache(requestId!, encryptedData);
+      return {
+        version: -1,
+        data: {
+          requestId: getRequestContextRequestId(),
+          creationId: getUUID(),
+          ...vendor.data,
+        },
+      };
     }
-    const latest = await prisma.secret.findFirst({
-      where: { scope: input.scope, type: input.type },
-      orderBy: { version: "desc" },
-      select: { version: true },
+    const encryptedTokens = secrets.encrypt(restArgs.tokens);
+
+    const latest = await prisma.secret.create({
+      data: {
+        scope: input.scope,
+        type: input.type,
+        data_encrypted: secrets.encrypt(input.data),
+        meta: input.meta as any,
+        version: 1,
+        tokens: encryptedTokens,
+      },
     });
-    const nextVersion = (latest?.version || 0) + 1;
-    await secrets.put(input.scope, input.type, input.data, input.meta);
-    return { version: nextVersion };
+
+    return { version: latest.version };
   }
 }
 
