@@ -115,3 +115,85 @@ export const cleanQueryObject = (query: Record<string, any>) => {
   });
   return cleanedQuery;
 };
+
+export function slugify(text: string) {
+  return text
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+import crypto from "node:crypto";
+
+export function generateNonce(bytes: number = 16): string {
+  return crypto.randomBytes(bytes).toString("hex");
+}
+
+export function base64urlEncode(obj: any): string {
+  const json = JSON.stringify(obj);
+  return Buffer.from(json)
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
+
+export function base64urlDecode<T = any>(val: string): T {
+  const pad = (s: string) => s + "===".slice((s.length + 3) % 4);
+  const b64 = pad(val).replace(/-/g, "+").replace(/_/g, "/");
+  const json = Buffer.from(b64, "base64").toString("utf8");
+  return JSON.parse(json) as T;
+}
+
+export function maskString(
+  value: string,
+  visibleCount = 4,
+  position: "end" | "start" = "end"
+) {
+  if (!value || typeof value !== "string") return value;
+  if (visibleCount <= 0) return "*".repeat(value.length);
+  if (visibleCount >= value.length) return value;
+  if (position === "start") {
+    const visible = value.slice(0, visibleCount);
+    const masked = "*".repeat(Math.max(value.length - visibleCount, 0));
+    return visible + masked;
+  } else {
+    const visible = value.slice(-visibleCount);
+    const masked = "*".repeat(Math.max(value.length - visibleCount, 0));
+    return masked + visible;
+  }
+}
+
+export function formatObjectKeys(obj: any, formatter: (key: string) => string) {
+  if (!obj || typeof obj !== "object") return obj;
+  return Object.keys(obj).reduce((acc, key) => {
+    acc[formatter(key)] = obj[key];
+    return acc;
+  }, {} as any);
+}
+
+export function camelCase(input: string): string {
+  if (!input || typeof input !== "string") return input;
+  return input
+    .replace(/[\s_-]+(.)?/g, (_, c) => (c ? c.toUpperCase() : ""))
+    .replace(/^[A-Z]/, (char) => char.toLowerCase());
+}
+
+export function kebabCase(input: string): string {
+  if (!input || typeof input !== "string") return input;
+  return input
+    .replace(/([a-z])([A-Z])/g, "$1-$2")
+    .replace(/[\s_]+/g, "-")
+    .replace(/-+/g, "-")
+    .toLowerCase();
+}
+
+export function pascalCase(input: string): string {
+  if (!input || typeof input !== "string") return input;
+  return input
+    .replace(/[\s_-]+(.)?/g, (_, c) => (c ? c.toUpperCase() : ""))
+    .replace(/^[a-z]/, (char) => char.toUpperCase());
+}

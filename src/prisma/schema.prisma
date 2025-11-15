@@ -11,37 +11,65 @@ datasource db {
     url      = env("DATABASE_URL")
 }
 
+enum PlatformName {
+    instagram
+    youtube
+}
+
+enum TraceStatus {
+    running
+    success
+    partial
+    failed
+}
+
+enum StageKind {
+    master
+    platform
+}
+
+enum StageStatus {
+    running
+    completed
+    failed
+}
+
+enum StepName {
+    prep
+    upload
+    publish
+}
+
+enum StepStatus {
+    running
+    completed
+    failed
+    skipped
+}
+
 model Project {
-    id         String   @id
+    id         String   @id @default(uuid(7))
     slug       String   @unique
     name       String
     webhookUrl String?  @map("webhook_url")
     createdAt  DateTime @default(now()) @map("created_at")
+    updatedAt  DateTime @updatedAt @map("updated_at")
 
     platforms Platform[]
+    secrets   Secret[]
 
+    @@index([slug])
     @@map("projects")
 }
 
 model Platform {
-    id        String  @id @default(cuid())
-    projectId String  @map("project_id")
-    name      String // instagram | youtube | ...
-    enabled   Boolean @default(true)
-
-    config             Json?
-    // Media profile fields (structured)
-    maxDurationSeconds Int?
-    minAspectRatio     Float?
-    maxAspectRatio     Float?
-    maxFileSizeMB      Int?
-    // Raw JSON profiles and limits
-    mediaProfile       Json?    @map("media_profile")
-    credsRef           String?  @map("creds_ref")
-    mapping            Json?    @map("mapping")
-    limits             Json?
-    createdAt          DateTime @default(now()) @map("created_at")
-    updatedAt          DateTime @updatedAt @map("updated_at")
+    id        String       @id @default(uuid(7))
+    projectId String       @map("project_id")
+    name      PlatformName
+    enabled   Boolean      @default(true)
+    config    Json? // Contains: mediaProfile, credsRef, mapping, limits, maxDurationSeconds, minAspectRatio, maxAspectRatio, maxFileSizeMB
+    createdAt DateTime     @default(now()) @map("created_at")
+    updatedAt DateTime     @updatedAt @map("updated_at")
 
     project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
@@ -51,33 +79,34 @@ model Platform {
 }
 
 model Secret {
-    id             String   @id @default(cuid())
-    scope          String // global | project:{id}
-    type           String // instagram | youtube | custom
-    version        Int      @default(1)
+    id             String       @id @default(uuid(7))
+    projectId      String?      @map("project_id") // nullable for global secrets
+    type           PlatformName // instagram | youtube | custom
+    version        Int          @default(1)
     data_encrypted String
     meta           Json?
-    createdAt      DateTime @default(now()) @map("created_at")
-    tokens         String?  @map("tokens")
+    createdAt      DateTime     @default(now()) @map("created_at")
+    tokens         String?      @map("tokens")
 
-    @@index([scope])
+    project Project? @relation(fields: [projectId], references: [id])
+
     @@index([type])
     @@map("secrets")
 }
 
 model Trace {
-    id              String    @id @default(cuid()) @map("trace_id")
-    projectId       String    @map("project_id")
-    idempotencyKey  String?   @map("idempotency_key")
-    status          String // running | success | partial | failed (current runtime status)
-    finalStatus     String?   @map("final_status") // optional mirror of status for audit
-    totalStages     Int       @default(0) @map("total_stages")
-    completedStages Int       @default(0) @map("completed_stages")
-    payload         Json?     @map("payload")
-    createdAt       DateTime  @default(now()) @map("created_at")
-    updatedAt       DateTime  @updatedAt @map("updated_at")
-    endedAt         DateTime? @map("ended_at")
-    durationMs      Int?      @map("duration_ms")
+    id              String       @id @default(uuid(7)) @map("trace_id")
+    projectId       String       @map("project_id")
+    idempotencyKey  String?      @map("idempotency_key")
+    status          TraceStatus // running | success | partial | failed (current runtime status)
+    finalStatus     TraceStatus? @map("final_status") // optional mirror of status for audit
+    totalStages     Int          @default(0) @map("total_stages")
+    completedStages Int          @default(0) @map("completed_stages")
+    payload         Json?        @map("payload")
+    createdAt       DateTime     @default(now()) @map("created_at")
+    updatedAt       DateTime     @updatedAt @map("updated_at")
+    endedAt         DateTime?    @map("ended_at")
+    durationMs      Int?         @map("duration_ms")
 
     stages Stage[]
     steps  Step[]
@@ -89,23 +118,23 @@ model Trace {
 }
 
 model Stage {
-    id                String    @id @default(cuid()) @map("stage_id")
-    traceId           String    @map("trace_id")
-    parentStageId     String?   @map("parent_stage_id")
-    kind              String // master | platform
+    id                String      @id @default(uuid(7)) @map("stage_id")
+    traceId           String      @map("trace_id")
+    parentStageId     String?     @map("parent_stage_id")
+    kind              StageKind // master | platform
     name              String // master | instagram | youtube | ...
-    status            String // running | completed | failed
-    progressCompleted Int       @default(0) @map("progress_completed")
-    progressTotal     Int       @default(0) @map("progress_total")
-    attempt           Int       @default(0)
-    attrs             Json?     @map("attrs")
-    startedAt         DateTime  @default(now()) @map("started_at")
-    endedAt           DateTime? @map("ended_at")
-    durationMs        Int?      @map("duration_ms")
+    status            StageStatus // running | completed | failed
+    progressCompleted Int         @default(0) @map("progress_completed")
+    progressTotal     Int         @default(0) @map("progress_total")
+    attempt           Int         @default(0)
+    attrs             Json?       @map("attrs")
+    startedAt         DateTime    @default(now()) @map("started_at")
+    endedAt           DateTime?   @map("ended_at")
+    durationMs        Int?        @map("duration_ms")
     error             Json?
     // Back-compat fields
     platform          String? // optional
-    order             Int       @default(0)
+    order             Int         @default(0)
 
     trace    Trace   @relation(fields: [traceId], references: [id], onDelete: Cascade)
     parent   Stage?  @relation("StageToStage", fields: [parentStageId], references: [id])
@@ -118,18 +147,18 @@ model Stage {
 }
 
 model Step {
-    id         String    @id @default(cuid()) @map("step_id")
-    traceId    String    @map("trace_id")
-    stageId    String    @map("stage_id")
-    name       String // prep | upload | publish
-    status     String // running | completed | failed | skipped
-    startedAt  DateTime  @default(now()) @map("started_at")
-    endedAt    DateTime? @map("ended_at")
-    durationMs Int?      @map("duration_ms")
+    id         String     @id @default(uuid(7)) @map("step_id")
+    traceId    String     @map("trace_id")
+    stageId    String     @map("stage_id")
+    name       StepName // prep | upload | publish
+    status     StepStatus // running | completed | failed | skipped
+    startedAt  DateTime   @default(now()) @map("started_at")
+    endedAt    DateTime?  @map("ended_at")
+    durationMs Int?       @map("duration_ms")
     meta       Json?
     error      Json?
-    createdAt  DateTime  @default(now()) @map("created_at")
-    updatedAt  DateTime  @updatedAt @map("updated_at")
+    createdAt  DateTime   @default(now()) @map("created_at")
+    updatedAt  DateTime   @updatedAt @map("updated_at")
 
     stage  Stage   @relation(fields: [stageId], references: [id], onDelete: Cascade)
     trace  Trace   @relation(fields: [traceId], references: [id], onDelete: Cascade)
@@ -141,7 +170,7 @@ model Step {
 }
 
 model Event {
-    id         String   @id @default(cuid()) @map("event_id")
+    id         String   @id @default(uuid(7)) @map("event_id")
     traceId    String   @map("trace_id")
     stageId    String?  @map("stage_id")
     stepId     String?  @map("step_id")

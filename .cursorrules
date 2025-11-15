@@ -1,7 +1,7 @@
 Project: Social Uploader (Express + BullMQ + Prisma)
 
 High-level contracts
-- API: Express TypeScript. POST /v1/publish (Bearer auth, zod validation, idempotent), GET /v1/publish/:id (timeline view). Rate limit: 30 req/min on POST.
+- API: Express TypeScript. POST /v1/publish (Bearer auth, ajv validation, idempotent), GET /v1/publish/:id (timeline view). Rate limit: 30 req/min on POST.
 - Queues: BullMQ with ioredis. Queues: master, publish, media-prep. Use QueueEvents when awaiting job completion.
 - Workers: Dynamic loader in src/core/loader.ts. WORKER_NAME filters by substring. Master → enqueues one publish job per enabled platform. Platform workers: instagram, youtube. Media-prep worker optionally normalizes media.
 - Events & trace: Emit canonical events for timeline. Trace writer (src/core/trace.ts) persists events and updates traces/stages/steps. It must tolerate out-of-order arrivals (ensure trace exists).
@@ -66,7 +66,7 @@ Prisma & database
 API contracts
 - POST /v1/publish:
   - Auth: Authorization: Bearer <token> (tokens in API_TOKENS).
-  - Body (zod): { projectId, mediaUrl (url), idempotencyKey?, title?, description?, platforms? }
+  - Body (ajv): { projectId, mediaUrl (url), idempotencyKey?, title?, description?, platforms? }
   - Behavior: create trace (if not idempotent hit), emit publish.request.received, enqueue master job. Return { requestId }.
 - GET /v1/publish/:id:
   - Return trace, stages (with steps), events ordered asc by timestamp.
@@ -100,7 +100,7 @@ Logging & metrics
 
 Do/Don’t checklist
 - Do keep path aliases; prefer "@/prisma" for Prisma client access.
-- Do validate inputs with zod; return 400 with flatten() details on invalid payloads.
+- Do validate inputs with ajv; return 400 with flatten() details on invalid payloads.
 - Do keep idempotency behavior and DB unique constraint.
 - Do not add Postgres/Redis services back into docker-compose.yml.
 - Do not emit logs with raw secrets or payloads containing sensitive tokens.

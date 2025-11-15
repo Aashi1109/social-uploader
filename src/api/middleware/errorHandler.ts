@@ -16,7 +16,7 @@ const errorHandler = (
   err: any,
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ) => {
   logger.error({ err, status: err?.status, message: err?.message });
 
@@ -42,7 +42,7 @@ const errorHandler = (
 
     // Include additional information in the response if available
     if (customError.additionalInfo) {
-      response.additionalInfo = customError.additionalInfo;
+      response = { ...response, ...customError.additionalInfo };
     }
 
     if (customError.name) response.type = customError.name;

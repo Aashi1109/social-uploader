@@ -12,35 +12,27 @@ import { isEmpty } from "@/shared/utils";
 import { GoogleOAuthService } from "@/features/oauth";
 import { logger } from "@/core/logger";
 import { google } from "googleapis";
+import { BadRequestError } from "@/exceptions";
 
 class YouTubeService implements BasePlatformService {
   #googleOAuthService: GoogleOAuthService;
-  #clientId: string;
-  #clientSecret: string;
+
   constructor(clientId: string, clientSecret: string) {
     if (!clientId || !clientSecret) {
       throw new Error("Client ID and client secret are required");
     }
-    this.#clientId = clientId;
-    this.#clientSecret = clientSecret;
+
     this.#googleOAuthService = new GoogleOAuthService(clientId, clientSecret);
   }
 
-  async verify(data: YouTubeSecret): Promise<VendorVerifyResult> {
+  async verify(tokens: YouTubeSecret["tokens"]): Promise<VendorVerifyResult> {
     try {
-      const { tokens } = data;
-      if (isEmpty(tokens)) return this.initOAuth();
-      const { refresh_token, access_token } = tokens!;
-      if (isEmpty(refresh_token || access_token)) return this.initOAuth();
+      if (isEmpty(tokens)) throw new BadRequestError("Tokens are required");
+      const { refreshToken, accessToken } = tokens!;
 
-      const channelList = await this.getChannelList(
-        access_token,
-        refresh_token
-      );
+      const channelList = await this.getChannelList(accessToken, refreshToken);
       logger.debug({ channelList }, "Channel list");
-      return {
-        data: { isIncomplete: false },
-      };
+      return { data: { isValidated: true } };
     } catch (e: any) {
       return { errors: { message: e.message } };
     }

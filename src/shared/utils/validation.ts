@@ -17,8 +17,8 @@ export function ajvErrorsToIssues(errors: ErrorObject[] | null | undefined) {
  */
 export function validateOrThrow<T>(
   validatorOrSchema: ValidateFunction | JSONSchemaType<any> | any,
-  data: unknown,
-  _name?: string
+  data: any,
+  _name?: string,
 ): T {
   let validate: ValidateFunction;
   if (typeof validatorOrSchema === "function") {
@@ -28,8 +28,8 @@ export function validateOrThrow<T>(
   }
   const valid = validate(data);
   if (!valid) {
-    throw new BadRequestError("invalid_schema", undefined, {
-      issues: ajvErrorsToIssues((validate as any).errors),
+    throw new BadRequestError("Validation Error", {
+      errors: ajvErrorsToIssues((validate as any).errors),
     });
   }
   return data as T;

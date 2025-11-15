@@ -1,21 +1,16 @@
 import type { JsonSchema } from "@/shared/types/json";
 import { PLATFORM_TYPES } from "../constants";
 
-// Single-source-of-truth schemas with x-meta annotations for UI
-// x-meta at root: { displayName, description }
-// x-meta at property: { label, inputType }
 export type YouTubeSecret = {
   clientId: string;
   clientSecret: string;
-  refreshToken: string;
-  channelId?: string;
 
   tokens?: {
-    access_token: string;
-    refresh_token: string;
-    expires_in: number;
-    token_type: string;
-    refresh_token_expires_in: number;
+    accessToken: string;
+    refreshToken: string;
+    expiresIn: number;
+    tokenType: string;
+    refreshTokenExpiresIn: number;
   };
 };
 
@@ -28,7 +23,7 @@ export type InstagramSecret = {
 
 export const PLATFORM_SCHEMAS: Record<PLATFORM_TYPES, JsonSchema> = {
   [PLATFORM_TYPES.INSTAGRAM]: {
-    $id: "secrets/instagram",
+    $id: "secrets/templates/instagram",
     type: "object",
     additionalProperties: false,
     "x-meta": {
@@ -61,77 +56,28 @@ export const PLATFORM_SCHEMAS: Record<PLATFORM_TYPES, JsonSchema> = {
     },
   },
   [PLATFORM_TYPES.YOUTUBE]: {
-    $id: "secrets/youtube",
+    $id: "secrets/templates/youtube",
     type: "object",
     additionalProperties: false,
-    "x-meta": {
-      displayName: "YouTube",
-      description: "Google OAuth credentials for YouTube Data API publishing.",
-    },
+    label: "YouTube",
+    description: "Google OAuth credentials for YouTube Data API publishing.",
     required: ["clientId", "clientSecret"],
     properties: {
       clientId: {
         type: "string",
         minLength: 1,
-        "x-meta": { label: "Client ID", inputType: "text" },
+        label: "Client ID",
+        inputType: "text",
       },
       clientSecret: {
         type: "string",
         minLength: 1,
-        "x-meta": { label: "Client Secret", inputType: "password" },
-      },
-      refreshToken: {
-        type: "string",
-        minLength: 1,
-        "x-meta": { label: "Refresh Token", inputType: "password" },
-      },
-      channelId: {
-        type: "string",
-        minLength: 1,
-        nullable: true,
-        "x-meta": { label: "Channel ID", inputType: "text" },
+        label: "Client Secret",
+        inputType: "password",
       },
     },
   },
 } as const;
-
-type FieldMeta = {
-  name: string;
-  label: string;
-  inputType: "text" | "password";
-  required: boolean;
-};
-
-export function listTemplateDescriptors(): Array<{
-  type: string;
-  displayName: string;
-  description?: string;
-  fields: FieldMeta[];
-}> {
-  return Object.entries(PLATFORM_SCHEMAS).map(([type, schema]) => {
-    const meta = (schema as any)["x-meta"] || {};
-    const required: string[] = Array.isArray((schema as any).required)
-      ? ((schema as any).required as string[])
-      : [];
-    const props = ((schema as any).properties || {}) as Record<string, any>;
-    const fields: FieldMeta[] = Object.entries(props).map(([name, def]) => {
-      const pmeta = (def as any)["x-meta"] || {};
-      return {
-        name,
-        label: String(pmeta.label || name),
-        inputType: (pmeta.inputType as "text" | "password") || "text",
-        required: required.includes(name),
-      };
-    });
-    return {
-      type,
-      displayName: String(meta.displayName || type),
-      description:
-        typeof meta.description === "string" ? meta.description : undefined,
-      fields,
-    };
-  });
-}
 
 export const getSchema = (type: string) =>
   PLATFORM_SCHEMAS[type as PLATFORM_TYPES];

@@ -1,8 +1,8 @@
-import { JsonObject } from "../types/json";
+import { JsonObject, JsonSchema } from "../types/json";
 
 export interface BasePlatformService {
-  verify(data: JsonObject): Promise<VendorVerifyResult>;
-  publish(data: JsonObject): Promise<VendorPublishResult>;
+  verify(tokens: any): Promise<VendorVerifyResult>;
+  publish(data: any): Promise<VendorPublishResult>;
 }
 
 export type VendorVerifyResult = {

@@ -1,4 +1,5 @@
 import { JsonObject } from "@/shared/types/json";
+import { camelCase, formatObjectKeys } from "@/shared/utils";
 import { google } from "googleapis";
 
 export default class GoogleOAuthService {
@@ -20,7 +21,7 @@ export default class GoogleOAuthService {
       redirectUri
     );
     const response = await oauth2Client.getToken(code);
-    return response.tokens;
+    return formatObjectKeys(response.tokens, camelCase);
   }
 
   buildAuthorizationUri(args: {
@@ -36,7 +37,7 @@ export default class GoogleOAuthService {
     );
     return oauth2Client.generateAuthUrl({
       access_type: "offline",
-      prompt: args.prompt ?? "consent", // Force consent to ensure refresh token is returned
+      prompt: args.prompt, // Force consent to ensure refresh token is returned
       scope: args.scopes,
       include_granted_scopes: true,
       state: JSON.stringify(args.state),

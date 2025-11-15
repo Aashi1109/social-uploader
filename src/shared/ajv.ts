@@ -1,13 +1,15 @@
 import Ajv from "ajv";
 import addFormats from "ajv-formats";
 
-const ajv = new Ajv({ allErrors: true }); // keep strict defaults
+const ajv = new Ajv({ allErrors: true, strictSchema: false });
 addFormats(ajv);
 
-ajv.addKeyword({
-  keyword: "x-meta",
-  schemaType: ["object"],
-  validate: () => true,
+["inputType", "label"].forEach((keyword) => {
+  ajv.addKeyword({
+    keyword,
+    schemaType: ["string"],
+    validate: () => true,
+  });
 });
 
 export default ajv;

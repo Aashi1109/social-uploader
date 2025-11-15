@@ -2,49 +2,16 @@ import { Router } from "express";
 import { asyncHandler, bearerAuth } from "@/api/middleware";
 import secretsService from "@/features/secret/service";
 import { BadRequestError, NotFoundError } from "@/exceptions";
-import { PLATFORM_TYPES } from "@/shared/constants";
 import { validateSecretCreateBody } from "@/features/secret/validation";
 
 const router = Router();
 
 router.get(
-  "/templates",
-  asyncHandler((_req, res) => {
-    const templates = secretsService.listTemplates();
-    return res.json({ templates });
-  })
-);
-
-router.get(
-  "/templates/:type",
+  "/templates/:type?",
   asyncHandler((req, res) => {
-    const tpl = secretsService.getTemplate(req.params.type as string);
+    const tpl = secretsService.getTemplate(req.params.type ?? "");
     if (!tpl) throw new NotFoundError("Template not found");
-    return res.json({ template: tpl });
-  })
-);
-
-router.post(
-  "/validate",
-  bearerAuth,
-  asyncHandler(async (req, res) => {
-    const { type, data } = req.body;
-    const result = await secretsService.validateAndVerify({
-      type: type as PLATFORM_TYPES,
-      data,
-    });
-
-    if (!result.schema.valid) {
-      throw new BadRequestError("invalid_schema", {
-        issues: result.schema.issues,
-      });
-    }
-    if (result.vendor.errors) {
-      throw new BadRequestError("invalid_credentials", {
-        vendor: result.vendor.errors,
-      });
-    }
-    return res.json({ valid: true, vendor: result.vendor });
+    return res.json({ data: tpl });
   })
 );
 
@@ -53,15 +20,42 @@ router.post(
   bearerAuth,
   [validateSecretCreateBody],
   asyncHandler(async (req, res) => {
-    const { scope, type, data, meta, projectId } = req.body;
+    const { projectId, type, data, meta } = req.body;
     const result = await secretsService.createSecret({
-      scope,
+      projectId,
       type,
       data,
       meta,
-      projectId,
     });
     return res.status(201).json(result);
+  })
+);
+
+router.get(
+  "/:id/validate",
+  bearerAuth,
+  asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    if (!id || typeof id !== "string")
+      throw new BadRequestError("Id is required");
+
+    const secret = await secretsService.getById(id);
+    if (!secret) throw new NotFoundError("Secret not found");
+    return res.json({ data: secret });
+  })
+);
+
+router.get(
+  "/:id",
+  bearerAuth,
+  asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    if (!id || typeof id !== "string")
+      throw new BadRequestError("Id is required");
+
+    const secret = await secretsService.getById(id);
+    if (!secret) throw new NotFoundError("Secret not found");
+    return res.json({ data: secret });
   })
 );
 

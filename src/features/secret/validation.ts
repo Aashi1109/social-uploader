@@ -1,8 +1,10 @@
 import type { ValidateFunction } from "ajv";
 import ajv from "@/shared/ajv";
 import { getSchema } from "@/shared/secrets/schemas";
-import { JsonObject } from "@/shared/types/json";
+
 import { NextFunction, Request, Response } from "express";
+import { PLATFORM_TYPES } from "@/shared/constants";
+import { BadRequestError } from "@/exceptions";
 
 /**
  * Generates a validation schema for a specific platform type.
@@ -10,22 +12,21 @@ import { NextFunction, Request, Response } from "express";
  */
 function generateSchemaForType(platformType: string) {
   const platformSchema = getSchema(platformType);
-  if (!platformSchema) {
-    return null;
-  }
+  if (!platformSchema)
+    throw new BadRequestError("No schema found for platform type");
 
   return {
     $id: `secrets/validate-${platformType}`,
     type: "object",
-    required: ["type", "data", "scope"],
+    required: ["type", "data", "meta"],
     properties: {
       type: {
         type: "string",
-        const: platformType,
+        enum: Object.values(PLATFORM_TYPES),
       },
       data: platformSchema,
-      scope: {
-        type: "string",
+      projectId: {
+        type: ["string", "null"],
       },
       meta: {
         type: "object",

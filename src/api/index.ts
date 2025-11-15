@@ -8,6 +8,8 @@ import { registerMetrics } from "@/api/plugins/metrics.plugin";
 import publishRouter from "@/api/routes/publish.route";
 import secretsRouter from "@/api/routes/secrets.route";
 import oauthRouter from "@/api/routes/oauth.route";
+import projectsRouter from "@/api/routes/projects.route";
+import platformsRouter from "@/api/routes/platforms.route";
 import {
   errorHandler,
   RequestContext,
@@ -27,10 +29,12 @@ registerMetrics(app);
 app.use("/v1/publish", publishRouter);
 app.use("/v1/secrets", secretsRouter);
 app.use("/v1/oauth", oauthRouter);
+app.use("/v1/projects", projectsRouter);
+app.use("/v1/platforms", platformsRouter);
 
 // Basic health
 app.get("/health", (_req, res) => {
-  res.json({ status: "ok" });
+  return res.json({ status: "ok" });
 });
 
 app.use(errorHandler);
