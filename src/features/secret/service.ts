@@ -1,4 +1,4 @@
-import prisma from "@/prisma";
+import { Secret } from "./model";
 import { secrets } from "@/core/secrets";
 import type { JsonObject } from "@/shared/types/json";
 import { getSchema, PLATFORM_SCHEMAS } from "@/shared/secrets/schemas";
@@ -10,7 +10,6 @@ import { VendorPublishResult, VendorVerifyResult } from "@/shared/interfaces";
 import { getRequestContextRequestId } from "@/api/middleware";
 import { setPendingSecretCache } from "./helpers";
 import { getUUID } from "@/shared/utils/ids";
-import { Secret } from "@/prisma/generated";
 import { isEmpty } from "@/shared/utils";
 
 class SecretsService {
@@ -70,22 +69,20 @@ class SecretsService {
     }
     const encryptedTokens = secrets.encrypt(restArgs.tokens);
 
-    const latest = await prisma.secret.create({
-      data: {
-        projectId: input.projectId,
-        type: input.type,
-        data_encrypted: secrets.encrypt(input.data),
-        meta: input.meta as any,
-        version: 1,
-        tokens: encryptedTokens,
-      },
+    const latest = await Secret.create({
+      projectId: input.projectId || null,
+      type: input.type as any,
+      dataEncrypted: secrets.encrypt(input.data),
+      meta: input.meta as any,
+      version: 1,
+      tokens: encryptedTokens,
     });
 
     return { version: latest.version };
   }
 
   async getById(id: string): Promise<Secret | null> {
-    const secret = await prisma.secret.findFirst({
+    const secret = await Secret.findOne({
       where: { id },
     });
 

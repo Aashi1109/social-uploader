@@ -3,7 +3,7 @@ import { createTrace } from "@/core/trace";
 import type { PublishRequest } from "@/shared/utils/validation";
 import { eventBus } from "@/core/events";
 import { nowIso } from "@/shared/utils/time";
-import prisma from "../../prisma";
+import { Trace } from "@/features/tracing/models";
 import { EventName } from "@/shared/constants";
 
 class PublishService {
@@ -12,12 +12,12 @@ class PublishService {
   ): Promise<{ requestId: string }> {
     // Idempotency: if idempotencyKey present, return existing trace
     if (body.idempotencyKey) {
-      const existing = await prisma.trace.findFirst({
+      const existing = await Trace.findOne({
         where: {
           projectId: body.projectId,
           idempotencyKey: body.idempotencyKey,
         },
-        select: { id: true },
+        attributes: ["id"],
       });
       if (existing) {
         return { requestId: existing.id };

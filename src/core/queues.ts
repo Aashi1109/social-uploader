@@ -4,6 +4,7 @@ import { REDIS_URL, QUEUE_NAMES } from "@/shared/constants";
 import type { JsonObject, JsonValue } from "@/shared/types/json";
 import { logger } from "@/core/logger";
 
+// TODO: Use Upstash Redis
 const connection = new IORedis(REDIS_URL, {
   maxRetriesPerRequest: null,
   enableReadyCheck: false,

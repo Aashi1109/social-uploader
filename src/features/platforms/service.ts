@@ -1,4 +1,5 @@
-import prisma from "@/prisma";
+import { Platform } from "./model";
+import { Project } from "@/features/projects/model";
 import { NotFoundError, BadRequestError } from "@/exceptions";
 import { PLATFORM_TYPES } from "@/shared/constants";
 import type { JsonObject } from "@/shared/types/json";
@@ -18,35 +19,27 @@ export interface PlatformConfig extends JsonObject {
 
 export class PlatformService {
   async listPlatforms(projectId?: string) {
-    return await prisma.platform.findMany({
+    return await Platform.findAll({
       where: projectId ? { projectId } : undefined,
-      include: {
-        project: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-          },
+      include: [
+        {
+          association: "project",
+          attributes: ["id", "name", "slug"],
         },
-      },
-      orderBy: {
-        createdAt: "desc",
-      },
+      ],
+      order: [["createdAt", "DESC"]],
     });
   }
 
   async getPlatformById(id: string) {
-    const platform = await prisma.platform.findUnique({
+    const platform = await Platform.findOne({
       where: { id },
-      include: {
-        project: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-          },
+      include: [
+        {
+          association: "project",
+          attributes: ["id", "name", "slug"],
         },
-      },
+      ],
     });
 
     if (!platform) {
@@ -57,22 +50,17 @@ export class PlatformService {
   }
 
   async getPlatformByProjectAndName(projectId: string, name: PLATFORM_TYPES) {
-    const platform = await prisma.platform.findUnique({
+    const platform = await Platform.findOne({
       where: {
-        projectId_name: {
-          projectId,
-          name: name as any,
-        },
+        projectId,
+        name: name as any,
       },
-      include: {
-        project: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-          },
+      include: [
+        {
+          association: "project",
+          attributes: ["id", "name", "slug"],
         },
-      },
+      ],
     });
 
     if (!platform) {
@@ -89,7 +77,7 @@ export class PlatformService {
     config?: PlatformConfig;
   }) {
     // Verify project exists
-    const project = await prisma.project.findUnique({
+    const project = await Project.findOne({
       where: { id: data.projectId },
     });
 
@@ -98,25 +86,24 @@ export class PlatformService {
     }
 
     try {
-      return await prisma.platform.create({
-        data: {
+      return await Platform.create(
+        {
           projectId: data.projectId,
           name: data.name as any,
           enabled: data.enabled ?? true,
           config: data.config as any,
         },
-        include: {
-          project: {
-            select: {
-              id: true,
-              name: true,
-              slug: true,
+        {
+          include: [
+            {
+              association: "project",
+              attributes: ["id", "name", "slug"],
             },
-          },
-        },
-      });
+          ],
+        }
+      );
     } catch (error: any) {
-      if (error.code === "P2002") {
+      if (error.name === "SequelizeUniqueConstraintError") {
         throw new BadRequestError(
           "Platform with this name already exists for this project"
         );
@@ -132,43 +119,41 @@ export class PlatformService {
       config?: PlatformConfig;
     }
   ) {
-    try {
-      return await prisma.platform.update({
-        where: { id },
-        data: {
-          ...(data.enabled !== undefined && { enabled: data.enabled }),
-          ...(data.config !== undefined && { config: data.config as any }),
-        },
-        include: {
-          project: {
-            select: {
-              id: true,
-              name: true,
-              slug: true,
-            },
-          },
-        },
-      });
-    } catch (error: any) {
-      if (error.code === "P2025") {
-        throw new NotFoundError("Platform not found");
-      }
-      throw error;
+    const platform = await Platform.findOne({ where: { id } });
+
+    if (!platform) {
+      throw new NotFoundError("Platform not found");
     }
+
+    if (data.enabled !== undefined) {
+      platform.enabled = data.enabled;
+    }
+    if (data.config !== undefined) {
+      platform.config = data.config as any;
+    }
+
+    await platform.save();
+    await platform.reload({
+      include: [
+        {
+          association: "project",
+          attributes: ["id", "name", "slug"],
+        },
+      ],
+    });
+
+    return platform;
   }
 
   async deletePlatform(id: string) {
-    try {
-      await prisma.platform.delete({
-        where: { id },
-      });
-      return { success: true };
-    } catch (error: any) {
-      if (error.code === "P2025") {
-        throw new NotFoundError("Platform not found");
-      }
-      throw error;
+    const platform = await Platform.findOne({ where: { id } });
+
+    if (!platform) {
+      throw new NotFoundError("Platform not found");
     }
+
+    await platform.destroy();
+    return { success: true };
   }
 
   async getPlatformBaseConfig(type: PLATFORM_TYPES) {

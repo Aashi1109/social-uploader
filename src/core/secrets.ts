@@ -1,4 +1,4 @@
-import prisma from "../prisma";
+import { Secret } from "@/features/secret/model";
 import { encryptAesGcm, decryptAesGcm } from "@/shared/utils/crypto";
 import type { JsonObject, JsonValue } from "@/shared/types/json";
 
@@ -22,12 +22,20 @@ export class LocalAesSecretManager implements SecretManager {
     return decryptAesGcm<T>(ciphertext);
   }
   async get<T = JsonValue>(scope: string, type: string): Promise<T | null> {
-    const row = await prisma.secret.findFirst({
-      where: { scope, type },
-      orderBy: { version: "desc" },
+    // scope can be 'global' or 'project:{id}'
+    const projectId = scope === "global" ? null : scope.replace("project:", "");
+
+    const row = await Secret.findOne({
+      where: {
+        projectId: projectId === "global" ? null : projectId,
+        type,
+      },
+      order: [["version", "DESC"]],
     });
     if (!row) return null;
-    return this.decrypt<T>(row.data_encrypted);
+
+    // Data is automatically decrypted via the getter
+    return row.data as T;
   }
   async put(
     scope: string,
@@ -35,21 +43,26 @@ export class LocalAesSecretManager implements SecretManager {
     data: JsonValue,
     meta?: JsonObject
   ): Promise<void> {
-    const latest = await prisma.secret.findFirst({
-      where: { scope, type },
-      orderBy: { version: "desc" },
-      select: { version: true },
+    // scope can be 'global' or 'project:{id}'
+    const projectId = scope === "global" ? null : scope.replace("project:", "");
+
+    const latest = await Secret.findOne({
+      where: {
+        projectId: projectId === "global" ? null : projectId,
+        type,
+      },
+      order: [["version", "DESC"]],
+      attributes: ["version"],
     });
     const version = (latest?.version || 0) + 1;
-    const data_encrypted = this.encrypt(data);
-    await prisma.secret.create({
-      data: {
-        scope,
-        type,
-        version,
-        data_encrypted,
-        meta: meta as any,
-      },
+    const dataEncrypted = this.encrypt(data);
+
+    await Secret.create({
+      projectId: projectId === "global" ? null : projectId,
+      type: type as any,
+      version,
+      dataEncrypted,
+      meta: meta as any,
     });
   }
 }

@@ -1,25 +1,20 @@
-import prisma from "@/prisma";
+import { Project } from "./model";
 import { NotFoundError, BadRequestError } from "@/exceptions";
 import { slugify } from "@/shared/utils";
+import { Op } from "sequelize";
 
 export class ProjectService {
   async listProjects() {
-    return await prisma.project.findMany({
-      include: {
-        platforms: true,
-      },
-      orderBy: {
-        createdAt: "desc",
-      },
+    return await Project.findAll({
+      include: [{ association: "platforms" }],
+      order: [["createdAt", "DESC"]],
     });
   }
 
   async getProjectById(id: string) {
-    const project = await prisma.project.findUnique({
+    const project = await Project.findOne({
       where: { id },
-      include: {
-        platforms: true,
-      },
+      include: [{ association: "platforms" }],
     });
 
     if (!project) {
@@ -30,11 +25,9 @@ export class ProjectService {
   }
 
   async getProjectBySlug(slug: string) {
-    const project = await prisma.project.findUnique({
+    const project = await Project.findOne({
       where: { slug },
-      include: {
-        platforms: true,
-      },
+      include: [{ association: "platforms" }],
     });
 
     if (!project) {
@@ -47,18 +40,18 @@ export class ProjectService {
   async createProject(data: { name: string; webhookUrl?: string | null }) {
     try {
       const slug = await this.getUniqueSlug(data.name);
-      return await prisma.project.create({
-        data: {
+      return await Project.create(
+        {
           slug,
           name: data.name,
-          webhookUrl: data.webhookUrl,
+          webhookUrl: data.webhookUrl || null,
         },
-        include: {
-          platforms: true,
-        },
-      });
+        {
+          include: [{ association: "platforms" }],
+        }
+      );
     } catch (error: any) {
-      if (error.code === "P2002") {
+      if (error.name === "SequelizeUniqueConstraintError") {
         throw new BadRequestError("Project with this name already exists");
       }
       throw error;
@@ -72,49 +65,46 @@ export class ProjectService {
       webhookUrl?: string | null;
     }
   ) {
-    try {
-      return await prisma.project.update({
-        where: { id },
-        data: {
-          ...(data.name !== undefined && { name: data.name }),
-          ...(data.webhookUrl !== undefined && { webhookUrl: data.webhookUrl }),
-        },
-        include: {
-          platforms: true,
-        },
-      });
-    } catch (error: any) {
-      if (error.code === "P2025") {
-        throw new NotFoundError("Project not found");
-      }
-      throw error;
+    const project = await Project.findOne({ where: { id } });
+
+    if (!project) {
+      throw new NotFoundError("Project not found");
     }
+
+    if (data.name !== undefined) {
+      project.name = data.name;
+    }
+    if (data.webhookUrl !== undefined) {
+      project.webhookUrl = data.webhookUrl;
+    }
+
+    await project.save();
+    await project.reload({ include: [{ association: "platforms" }] });
+
+    return project;
   }
 
   async deleteProject(id: string) {
-    try {
-      await prisma.project.delete({
-        where: { id },
-      });
-      return { success: true };
-    } catch (error: any) {
-      if (error.code === "P2025") {
-        throw new NotFoundError("Project not found");
-      }
-      throw error;
+    const project = await Project.findOne({ where: { id } });
+
+    if (!project) {
+      throw new NotFoundError("Project not found");
     }
+
+    await project.destroy();
+    return { success: true };
   }
 
   async getUniqueSlug(title: string) {
     const base = slugify(title);
 
-    const existing = await prisma.project.findMany({
+    const existing = await Project.findAll({
       where: {
         slug: {
-          startsWith: base,
+          [Op.startsWith]: base,
         },
       },
-      select: { slug: true },
+      attributes: ["slug"],
     });
 
     if (existing.length === 0) {

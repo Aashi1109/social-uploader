@@ -1,3 +1,5 @@
+import crypto from "node:crypto";
+
 /**
  * Converts a string to snake_case.
  */
@@ -125,8 +127,6 @@ export function slugify(text: string) {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
 }
-
-import crypto from "node:crypto";
 
 export function generateNonce(bytes: number = 16): string {
   return crypto.randomBytes(bytes).toString("hex");

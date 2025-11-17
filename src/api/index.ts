@@ -16,8 +16,21 @@ import {
   requestContextMiddleware,
   requestLogger,
 } from "./middleware";
+import { getDBConnection } from "@/shared/connections/database";
 
 const app = express();
+
+// Validate database connection before starting server
+async function validateConnections() {
+  try {
+    const db = getDBConnection();
+    await db.authenticate();
+    logger.info("✅ Database connection established successfully");
+  } catch (error) {
+    logger.error({ error }, "❌ Unable to connect to database");
+    process.exit(1);
+  }
+}
 
 app.use(express.json({ limit: "10mb" }));
 
@@ -39,8 +52,11 @@ app.get("/health", (_req, res) => {
 
 app.use(errorHandler);
 
-app.listen(DEFAULT_PORT, () => {
-  logger.info({ port: DEFAULT_PORT }, "API listening");
+// Start server after validating connections
+validateConnections().then(() => {
+  app.listen(DEFAULT_PORT, () => {
+    logger.info({ port: DEFAULT_PORT }, "🚀 API listening");
+  });
 });
 
 export default app;

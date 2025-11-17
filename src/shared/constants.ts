@@ -13,6 +13,10 @@ export enum REDIS_CONNECTION_NAMES {
   Default = "default",
 }
 
+export enum DB_CONNECTION_NAMES {
+  Default = "default",
+}
+
 export const QUEUE_NAMES = {
   master: "master",
   publish: "publish",

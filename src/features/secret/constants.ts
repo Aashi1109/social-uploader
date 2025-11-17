@@ -6,3 +6,5 @@ export const SECRET_MASK_KEYS = [
   "apiKey",
   "apiSecret",
 ];
+
+export const ENCRYPTED_FIELDS = ["data", "tokens"] as const;

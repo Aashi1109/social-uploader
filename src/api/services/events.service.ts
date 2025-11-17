@@ -1,4 +1,5 @@
-import prisma from "../../prisma";
+import { Event } from "@/features/tracing/models";
+import { Op } from "sequelize";
 
 export interface EventsPage {
   events: any[];
@@ -31,30 +32,37 @@ class EventsService {
         ? Math.max(1, Math.min(500, opts.limit))
         : 100;
     const where: any = { traceId };
+
     if (parsed) {
-      where.AND = [
+      where[Op.or] = [
+        { timestamp: { [Op.gt]: new Date(parsed.ts) } },
         {
-          OR: [
-            { timestamp: { gt: new Date(parsed.ts) } },
-            {
-              AND: [
-                { timestamp: new Date(parsed.ts) },
-                { id: { gt: parsed.id } },
-              ],
-            },
+          [Op.and]: [
+            { timestamp: new Date(parsed.ts) },
+            { id: { [Op.gt]: parsed.id } },
           ],
         },
       ];
     }
-    const events = await prisma.event.findMany({
+
+    const events = await Event.findAll({
       where,
-      orderBy: [{ timestamp: "asc" }, { id: "asc" }],
-      take: limit,
+      order: [
+        ["timestamp", "ASC"],
+        ["id", "ASC"],
+      ],
+      limit,
     });
+
     if (events.length === 0) {
-      return { events };
+      return { events: [] };
     }
+
     const last = events[events.length - 1];
+    if (!last) {
+      return { events: [] };
+    }
+
     const nextCursor = encodeCursor({
       ts: last.timestamp.toISOString(),
       id: last.id,

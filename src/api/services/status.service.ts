@@ -1,4 +1,4 @@
-import prisma from "../../prisma";
+import { Trace, Stage, Step, Event } from "@/features/tracing/models";
 
 type StepRow = {
   id: string;
@@ -16,18 +16,22 @@ type StageRow = {
 
 class StatusService {
   async getPublishStatus(traceId: string) {
-    const trace = await prisma.trace.findUnique({
+    const trace = await Trace.findOne({
       where: { id: traceId },
-      include: {
-        stages: {
-          include: {
-            steps: true,
-          },
+      include: [
+        {
+          association: "stages",
+          include: [
+            {
+              association: "steps",
+            },
+          ],
         },
-        events: {
-          orderBy: { timestamp: "asc" },
+        {
+          association: "events",
         },
-      },
+      ],
+      order: [[{ model: Event, as: "events" }, "timestamp", "ASC"]],
     });
     if (!trace) {
       return null;
@@ -41,19 +45,21 @@ class StatusService {
         createdAt: trace.createdAt,
         updatedAt: trace.updatedAt,
       },
-      stages: trace.stages.map((s: StageRow) => ({
-        id: s.id,
-        name: s.name,
-        platform: s.platform,
-        status: s.status,
-        steps: s.steps.map((st: StepRow) => ({
-          id: st.id,
-          name: st.name,
-          status: st.status,
-          durationMs: st.durationMs,
-        })),
-      })),
-      events: trace.events,
+      stages:
+        trace.stages?.map((s: any) => ({
+          id: s.id,
+          name: s.name,
+          platform: s.platform,
+          status: s.status,
+          steps:
+            s.steps?.map((st: any) => ({
+              id: st.id,
+              name: st.name,
+              status: st.status,
+              durationMs: st.durationMs,
+            })) || [],
+        })) || [],
+      events: trace.events || [],
     };
   }
 }

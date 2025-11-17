@@ -1,12 +1,12 @@
-import { Secret } from "@/prisma/generated";
+import { Secret } from "./model";
 
-const getSafeSecret = (secret: Secret) => {
+export const getSafeSecret = (secret: Secret) => {
   return {
     id: secret.id,
     projectId: secret.projectId,
     type: secret.type,
     version: secret.version,
-    data_encrypted: secret.data_encrypted,
+    dataEncrypted: secret.dataEncrypted,
     meta: secret.meta,
     createdAt: secret.createdAt,
     tokens: secret.tokens,

@@ -1,4 +1,7 @@
-import { REDIS_CONNECTION_NAMES } from "@/shared/constants";
+import {
+  REDIS_CONNECTION_NAMES,
+  DB_CONNECTION_NAMES,
+} from "@/shared/constants";
 import { config as loadEnv } from "dotenv";
 
 loadEnv();
@@ -8,7 +11,7 @@ const isProduction = process.env.NODE_ENV === "production";
 const config = {
   env: process.env.NODE_ENV,
   db: {
-    url: process.env.DATABASE_URL,
+    [DB_CONNECTION_NAMES.Default]: process.env.DATABASE_URL || "",
   },
   redis: {
     [REDIS_CONNECTION_NAMES.Default]: {
@@ -20,10 +23,10 @@ const config = {
   masterKey: process.env.MASTER_KEY,
   port: Number(process.env.PORT),
   hostname: process.env.HOSTNAME,
-  infra: {
-    appName: process.env.APP_NAME,
-    appVersion: process.env.APP_VERSION,
-    appEnvironment: process.env.APP_ENVIRONMENT,
+  infrastructure: {
+    appName: process.env.APP_NAME || "social-uploader",
+    appVersion: process.env.APP_VERSION || "1.0.0",
+    appEnvironment: process.env.APP_ENVIRONMENT || "development",
   },
   axiom: {
     apiKey: process.env.AXIOM_API_KEY,
