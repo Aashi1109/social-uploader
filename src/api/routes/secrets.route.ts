@@ -1,8 +1,8 @@
 import { Router } from "express";
 import { asyncHandler, bearerAuth } from "@/api/middleware";
-import secretsService from "@/features/secret/service";
+import secretsService from "@/features/secrets/service";
 import { BadRequestError, NotFoundError } from "@/exceptions";
-import { validateSecretCreateBody } from "@/features/secret/validation";
+import { validateSecretCreateBody } from "@/features/secrets/validation";
 
 const router = Router();
 
@@ -21,7 +21,7 @@ router.post(
   [validateSecretCreateBody],
   asyncHandler(async (req, res) => {
     const { projectId, type, data, meta } = req.body;
-    const result = await secretsService.createSecret({
+    const result = await secretsService.create({
       projectId,
       type,
       data,

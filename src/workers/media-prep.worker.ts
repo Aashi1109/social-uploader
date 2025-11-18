@@ -32,6 +32,7 @@ export default function MediaPrepWorker() {
       status: "success",
       meta: { preparedUrl: mediaUrl, durationSec: 5 },
     });
-    return { preparedUrl: mediaUrl };
+
+    return true;
   });
 }

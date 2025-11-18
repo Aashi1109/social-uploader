@@ -11,7 +11,7 @@ import {
 } from "sequelize";
 import { getUUID } from "@/shared/utils/ids";
 import { Platform } from "@/features/platforms/model";
-import { Secret } from "@/features/secret/model";
+import { Secret } from "@/features/secrets/model";
 import { getDBConnection } from "@/shared/connections";
 
 // Define attributes

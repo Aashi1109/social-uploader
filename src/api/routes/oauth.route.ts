@@ -2,18 +2,18 @@ import { Router } from "express";
 import { asyncHandler } from "@/api/middleware";
 import config from "@/config";
 import { BadRequestError } from "@/exceptions";
-import { secrets } from "@/core/secrets";
 
 import { jnparse } from "@/shared/utils";
 import {
   deletePendingSecretCache,
   getPendingSecretCache,
-} from "@/features/secret/helpers";
-import { secretsService } from "../services";
+} from "@/features/secrets/helpers";
 import { GoogleOAuthService } from "@/features/oauth";
 import { YouTubeSecret } from "@/shared/secrets/schemas";
+import { SecretsService } from "@/features";
 
 const router = Router();
+const secretsService = new SecretsService();
 
 router.get(
   "/youtube/callback",
@@ -28,7 +28,7 @@ router.get(
 
     const secretData = await getPendingSecretCache(requestId);
     if (!secretData) throw new BadRequestError("Secret Data not found");
-    const decodedData: any = secrets.decrypt(secretData as string);
+    const decodedData: any = secretsService.decrypt(secretData as string);
     const { clientId, clientSecret } = decodedData.data as YouTubeSecret;
     const googleOAuthService = new GoogleOAuthService(clientId, clientSecret);
     const tokens = await googleOAuthService.exchangeAuthCodeForTokens(
@@ -36,10 +36,11 @@ router.get(
       config.platforms.youtube.redirectUri || ""
     );
 
-    const secret = await secretsService.createSecret({
+    const secret = await secretsService.create({
       ...decodedData,
       tokens,
-    } as any);
+    });
+
     await deletePendingSecretCache(requestId);
 
     return res.status(201).json({ data: secret });

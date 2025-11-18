@@ -1,14 +1,12 @@
 import { Queue, QueueEvents, Worker, JobsOptions, Job } from "bullmq";
-import IORedis from "ioredis";
-import { REDIS_URL, QUEUE_NAMES } from "@/shared/constants";
+import { QUEUE_NAMES, REDIS_CONNECTION_NAMES } from "@/shared/constants";
 import type { JsonObject, JsonValue } from "@/shared/types/json";
 import { logger } from "@/core/logger";
+import { getRedisWorkerConnectionConfig } from "@/shared/connections/redis";
 
-// TODO: Use Upstash Redis
-const connection = new IORedis(REDIS_URL, {
-  maxRetriesPerRequest: null,
-  enableReadyCheck: false,
-});
+const connection = getRedisWorkerConnectionConfig(
+  REDIS_CONNECTION_NAMES.Default
+);
 
 export const masterQueue = new Queue(QUEUE_NAMES.master, { connection });
 export const publishQueue = new Queue(QUEUE_NAMES.publish, { connection });
@@ -35,11 +33,11 @@ export function getDefaultJobOptions(): JobsOptions {
 
 export function createWorker<D = JsonObject>(
   name: string,
-  processor: (job: Job<D>) => Promise<void> | JsonValue,
+  processor: (job: Job<D>) => Promise<boolean>,
   concurrency = 5
 ): Worker {
   logger.info({ queue: name }, "Starting worker");
-  const worker = new Worker(name, processor as any, {
+  const worker = new Worker(name, processor, {
     connection,
     concurrency,
   });

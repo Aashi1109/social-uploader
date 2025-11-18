@@ -1,6 +1,5 @@
 import { Secret } from "./model";
-import { secrets } from "@/core/secrets";
-import type { JsonObject } from "@/shared/types/json";
+import type { JsonObject, JsonValue } from "@/shared/types/json";
 import { getSchema, PLATFORM_SCHEMAS } from "@/shared/secrets/schemas";
 import { InstagramService } from "@/features/platforms/instagram";
 import YouTubeService from "@/features/platforms/youtube/service";
@@ -11,6 +10,8 @@ import { getRequestContextRequestId } from "@/api/middleware";
 import { setPendingSecretCache } from "./helpers";
 import { getUUID } from "@/shared/utils/ids";
 import { isEmpty } from "@/shared/utils";
+import { NotFoundError } from "@/exceptions";
+import { decryptAesGcm, encryptAesGcm } from "@/shared/utils/crypto";
 
 class SecretsService {
   getTemplate(type: string): object | undefined {
@@ -18,7 +19,7 @@ class SecretsService {
     return getSchema(type) as object | undefined;
   }
 
-  async createSecret(input: {
+  async create(input: {
     projectId?: string;
     type: PLATFORM_TYPES.INSTAGRAM | PLATFORM_TYPES.YOUTUBE;
     data: InstagramSecret | YouTubeSecret;
@@ -53,10 +54,11 @@ class SecretsService {
 
     if (vendor?.data?.isIncomplete) {
       const requestId = getRequestContextRequestId();
-      const encryptedData = secrets.encrypt({
+      const encryptedData = this.encrypt({
         ...input,
         creationId: getUUID(),
       });
+
       await setPendingSecretCache(requestId!, encryptedData);
       return {
         version: -1,
@@ -67,27 +69,71 @@ class SecretsService {
         },
       };
     }
-    const encryptedTokens = secrets.encrypt(restArgs.tokens);
 
     const latest = await Secret.create({
       projectId: input.projectId || null,
       type: input.type as any,
-      dataEncrypted: secrets.encrypt(input.data),
-      meta: input.meta as any,
+      data: input.data,
+      meta: input.meta,
       version: 1,
-      tokens: encryptedTokens,
+      tokens: restArgs.tokens,
     });
 
     return { version: latest.version };
   }
 
-  async getById(id: string): Promise<Secret | null> {
+  async getById(id: string) {
     const secret = await Secret.findOne({
       where: { id },
     });
 
     return secret;
   }
+
+  async getForProjects(projectId: string) {
+    const secrets = await Secret.findAll({
+      where: { projectId },
+    });
+
+    return secrets;
+  }
+
+  async update(
+    id: string,
+    input: {
+      data: JsonValue;
+      meta?: JsonObject;
+      tokens?: JsonValue;
+    }
+  ) {
+    let secret = await Secret.findOne({
+      where: { id },
+    });
+    if (!secret) throw new NotFoundError("Secret not found");
+
+    secret.data = input.data || secret.data;
+    secret.meta = input.meta || secret.meta;
+    secret.tokens = input.tokens || secret.tokens;
+    secret = await secret.save();
+
+    return secret;
+  }
+
+  async delete(id: string) {
+    const secret = await Secret.findOne({
+      where: { id },
+    });
+    if (!secret) throw new NotFoundError("Secret not found");
+    await secret.destroy();
+    return secret;
+  }
+
+  encrypt(data: JsonValue): string {
+    return encryptAesGcm(data);
+  }
+  decrypt<T = JsonValue>(text: string): T {
+    return decryptAesGcm<T>(text);
+  }
 }
 
-export default new SecretsService();
+export default SecretsService;

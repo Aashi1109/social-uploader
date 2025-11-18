@@ -21,8 +21,9 @@ export async function disconnectRedisConnections() {
   return Promise.all(disconnecting);
 }
 
-export function getRedisConnection(name?: REDIS_CONNECTION_NAMES.Default) {
-  name ??= REDIS_CONNECTION_NAMES.Default;
+export function getRedisConnection(
+  name: REDIS_CONNECTION_NAMES = REDIS_CONNECTION_NAMES.Default
+) {
   if (redisConnections[name]) {
     return redisConnections[name];
   }
@@ -32,3 +33,12 @@ export function getRedisConnection(name?: REDIS_CONNECTION_NAMES.Default) {
   redisConnections[name] = connect(name);
   return redisConnections[name];
 }
+
+export const getRedisWorkerConnectionConfig = (
+  name: REDIS_CONNECTION_NAMES
+) => ({
+  host: config.redis[name].url?.replace("https://", "") || "",
+  password: config.redis[name].token,
+  tls: {},
+  port: config.redis[name].port,
+});

@@ -65,9 +65,9 @@ export class Secret extends Model<
   declare projectId: ForeignKey<string> | null;
   declare type: PLATFORM_TYPES;
   declare version: CreationOptional<number>;
-  declare data: string;
+  declare data: JsonValue;
   declare meta: JsonValue | null;
-  declare tokens: string | null;
+  declare tokens: JsonValue | null;
   declare createdAt: CreationOptional<Date>;
 
   // Associations

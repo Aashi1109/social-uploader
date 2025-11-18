@@ -7,24 +7,26 @@ import { eventBus } from "@/core/events";
 import { nowIso } from "@/shared/utils/time";
 import type { PublishJobData } from "@/shared/types/publish";
 import { EventName, PLATFORM_TYPES, STEP_NAMES } from "@/shared/constants";
+import { BadRequestError } from "@/exceptions";
 
 export default function YoutubeWorker() {
   createWorker("publish", async (job) => {
     const data: PublishJobData = job.data as PublishJobData;
-    if (data.platform !== PLATFORM_TYPES.youtube) return;
+    if (data.platform !== PLATFORM_TYPES.YOUTUBE)
+      throw new BadRequestError("Invalid platform");
 
     eventBus.emitEvent({
       name: EventName.PLATFORM_STARTED,
       timestamp: nowIso(),
       traceId: data.traceId as string,
       projectId: data.projectId as string,
-      platform: PLATFORM_TYPES.youtube,
+      platform: PLATFORM_TYPES.YOUTUBE,
     });
 
     const prep = await mediaPrepQueue.add("prep", {
       traceId: data.traceId,
       projectId: data.projectId,
-      platform: PLATFORM_TYPES.youtube,
+      platform: PLATFORM_TYPES.YOUTUBE,
       mediaUrl: data.mediaUrl,
     });
     await prep.waitUntilFinished(mediaPrepQueueEvents);
@@ -34,7 +36,7 @@ export default function YoutubeWorker() {
       timestamp: nowIso(),
       traceId: data.traceId,
       projectId: data.projectId,
-      platform: PLATFORM_TYPES.youtube,
+      platform: PLATFORM_TYPES.YOUTUBE,
       step: STEP_NAMES.upload,
       status: "running",
     });
@@ -44,7 +46,7 @@ export default function YoutubeWorker() {
       timestamp: nowIso(),
       traceId: data.traceId,
       projectId: data.projectId,
-      platform: PLATFORM_TYPES.youtube,
+      platform: PLATFORM_TYPES.YOUTUBE,
       step: STEP_NAMES.upload,
       status: "success",
     });
@@ -54,7 +56,7 @@ export default function YoutubeWorker() {
       timestamp: nowIso(),
       traceId: data.traceId,
       projectId: data.projectId,
-      platform: PLATFORM_TYPES.youtube,
+      platform: PLATFORM_TYPES.YOUTUBE,
       step: STEP_NAMES.publish,
       status: "running",
     });
@@ -64,7 +66,7 @@ export default function YoutubeWorker() {
       timestamp: nowIso(),
       traceId: data.traceId,
       projectId: data.projectId,
-      platform: PLATFORM_TYPES.youtube,
+      platform: PLATFORM_TYPES.YOUTUBE,
       step: STEP_NAMES.publish,
       status: "success",
     });
@@ -74,7 +76,9 @@ export default function YoutubeWorker() {
       timestamp: nowIso(),
       traceId: data.traceId,
       projectId: data.projectId,
-      platform: PLATFORM_TYPES.youtube,
+      platform: PLATFORM_TYPES.YOUTUBE,
     });
+
+    return true;
   });
 }

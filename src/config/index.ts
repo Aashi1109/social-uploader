@@ -18,6 +18,7 @@ const config = {
       host: process.env.REDIS_HOST || "",
       token: process.env.REDIS_PASSWORD || "",
       port: Number(process.env.REDIS_PORT),
+      url: process.env.REDIS_URL,
     },
   },
   masterKey: process.env.MASTER_KEY,
