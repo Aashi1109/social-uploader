@@ -12,7 +12,7 @@ import { isEmpty } from "@/shared/utils";
 import { GoogleOAuthService } from "@/features/oauth";
 import { logger } from "@/core/logger";
 import { google } from "googleapis";
-import { BadRequestError } from "@/exceptions";
+import { BadRequestError } from "@/shared/exceptions";
 
 class YouTubeService implements BasePlatformService {
   #googleOAuthService: GoogleOAuthService;

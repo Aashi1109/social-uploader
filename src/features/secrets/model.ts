@@ -5,25 +5,17 @@ import {
   InferAttributes,
   InferCreationAttributes,
   CreationOptional,
-  NonAttribute,
-  ForeignKey,
-  BelongsToGetAssociationMixin,
-  Association,
+  Sequelize,
 } from "sequelize";
 import { PLATFORM_TYPES } from "@/shared/constants";
 import type { JsonValue } from "@/shared/types/json";
-import { getUUID } from "@/shared/utils/ids";
 import { encryptAesGcm, decryptAesGcm } from "@/shared/utils/crypto";
-import { Project } from "@/features/projects/model";
 import { getDBConnection } from "@/shared/connections";
-import { ENCRYPTED_FIELDS } from "./constants";
-
-// Columns that contain encrypted data (handled by getters/setters)
 
 // Define attributes
 export interface SecretAttributes {
   id: string;
-  projectId: string | null;
+  platformIds: string[] | null;
   type: PLATFORM_TYPES;
   version: number;
   dataEncrypted: string;
@@ -36,7 +28,7 @@ export interface SecretAttributes {
 export interface SecretCreationAttributes
   extends Optional<
     SecretAttributes,
-    "id" | "version" | "meta" | "tokens" | "createdAt"
+    "id" | "version" | "meta" | "tokens" | "createdAt" | "platformIds"
   > {}
 
 // Define the model class
@@ -45,7 +37,7 @@ export class Secret extends Model<
   InferCreationAttributes<Secret>
 > {
   declare id: CreationOptional<string>;
-  declare projectId: ForeignKey<string> | null;
+  declare platformIds: string[] | null;
   declare type: PLATFORM_TYPES;
   declare version: CreationOptional<number>;
   declare data: JsonValue; // Getter/setter handles encryption transparently
@@ -53,34 +45,29 @@ export class Secret extends Model<
   declare tokens: JsonValue | null; // Getter/setter handles encryption transparently
   declare createdAt: CreationOptional<Date>;
 
-  // Associations
-  declare project?: NonAttribute<any>;
-  declare getProject: BelongsToGetAssociationMixin<any>;
-
-  declare static associations: {
-    project: Association<Secret, any>;
-  };
+  // Note: Since platformIds is an array, we can't use standard Sequelize associations
+  // Platforms must be loaded manually using WHERE id IN (platformIds)
 }
 
 // Initialize the model
 Secret.init(
   {
     id: {
-      type: DataTypes.STRING,
+      type: DataTypes.UUID,
       primaryKey: true,
-      defaultValue: () => getUUID(),
+      defaultValue: Sequelize.literal("uuidv7()"),
     },
-    projectId: {
-      type: DataTypes.STRING,
+    platformIds: {
+      type: DataTypes.ARRAY(DataTypes.UUID),
       allowNull: true,
-      field: "project_id",
-      references: {
-        model: "projects",
-        key: "id",
-      },
+      field: "platform_ids",
+      // Note: Sequelize doesn't support FK constraints on array columns
+      // Referential integrity must be maintained at application level or via DB triggers
     },
     type: {
-      type: DataTypes.ENUM(PLATFORM_TYPES.INSTAGRAM, PLATFORM_TYPES.YOUTUBE),
+      type: DataTypes.ENUM({
+        values: Object.values(PLATFORM_TYPES),
+      }),
       allowNull: false,
     },
     version: {
@@ -129,20 +116,9 @@ Secret.init(
     timestamps: false,
     underscored: true,
     indexes: [{ fields: ["type"] }],
+    paranoid: true,
   }
 );
-
-Project.hasMany(Secret, {
-  foreignKey: "projectId",
-  as: "secrets",
-  onDelete: "CASCADE",
-});
-
-// Define associations
-Secret.belongsTo(Project, {
-  foreignKey: "projectId",
-  as: "project",
-});
 
 (async () => {
   await Secret.sync({});

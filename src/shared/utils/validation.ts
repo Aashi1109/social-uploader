@@ -1,7 +1,7 @@
 import type { ErrorObject, JSONSchemaType } from "ajv";
 import type { ValidateFunction } from "ajv";
 import ajv from "@/shared/ajv";
-import { BadRequestError } from "@/exceptions";
+import { BadRequestError } from "@/shared/exceptions";
 
 export function ajvErrorsToIssues(errors: ErrorObject[] | null | undefined) {
   if (!errors) return [];
@@ -18,7 +18,7 @@ export function ajvErrorsToIssues(errors: ErrorObject[] | null | undefined) {
 export function validateOrThrow<T>(
   validatorOrSchema: ValidateFunction | JSONSchemaType<any> | any,
   data: any,
-  _name?: string,
+  _name?: string
 ): T {
   let validate: ValidateFunction;
   if (typeof validatorOrSchema === "function") {

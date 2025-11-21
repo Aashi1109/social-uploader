@@ -10,10 +10,12 @@ import {
   HasManyGetAssociationsMixin,
   BelongsToGetAssociationMixin,
   Association,
+  Sequelize,
 } from "sequelize";
 import type { JsonValue } from "@/shared/types/json";
 import { getUUID } from "@/shared/utils/ids";
 import { getDBConnection } from "@/shared/connections";
+import { Project } from "../projects/model";
 
 // Enums - using string literals to match database
 export type TraceStatus = "running" | "success" | "partial" | "failed";
@@ -88,15 +90,20 @@ export class Trace extends Model<
 Trace.init(
   {
     id: {
-      type: DataTypes.STRING,
+      type: DataTypes.UUID,
       primaryKey: true,
-      field: "trace_id",
-      defaultValue: () => getUUID(),
+      field: "id",
+      defaultValue: Sequelize.literal("uuidv7()"),
     },
     projectId: {
-      type: DataTypes.STRING,
+      type: DataTypes.UUID,
       allowNull: false,
       field: "project_id",
+      references: {
+        model: Project,
+        key: "id",
+      },
+      onDelete: "CASCADE",
     },
     idempotencyKey: {
       type: DataTypes.STRING,
@@ -160,6 +167,7 @@ Trace.init(
       { fields: ["project_id"] },
       { unique: true, fields: ["project_id", "idempotency_key"] },
     ],
+    paranoid: true,
   }
 );
 
@@ -245,29 +253,30 @@ export class Stage extends Model<
 Stage.init(
   {
     id: {
-      type: DataTypes.STRING,
+      type: DataTypes.UUID,
       primaryKey: true,
       field: "stage_id",
-      defaultValue: () => getUUID(),
+      defaultValue: Sequelize.literal("uuidv7()"),
     },
     traceId: {
-      type: DataTypes.STRING,
+      type: DataTypes.UUID,
       allowNull: false,
       field: "trace_id",
       references: {
-        model: "traces",
-        key: "trace_id",
+        model: Trace,
+        key: "id",
       },
       onDelete: "CASCADE",
     },
     parentStageId: {
-      type: DataTypes.STRING,
+      type: DataTypes.UUID,
       allowNull: true,
       field: "parent_stage_id",
       references: {
-        model: "stages",
-        key: "stage_id",
+        model: Stage,
+        key: "id",
       },
+      onDelete: "CASCADE",
     },
     kind: {
       type: DataTypes.ENUM("master", "platform"),
@@ -337,7 +346,8 @@ Stage.init(
     tableName: "stages",
     timestamps: false,
     underscored: true,
-    indexes: [{ fields: ["trace_id"] }],
+    indexes: [{ fields: ["id"] }],
+    paranoid: true,
   }
 );
 
@@ -405,28 +415,28 @@ export class Step extends Model<
 Step.init(
   {
     id: {
-      type: DataTypes.STRING,
+      type: DataTypes.UUID,
       primaryKey: true,
       field: "step_id",
-      defaultValue: () => getUUID(),
+      defaultValue: Sequelize.literal("uuidv7()"),
     },
     traceId: {
-      type: DataTypes.STRING,
+      type: DataTypes.UUID,
       allowNull: false,
       field: "trace_id",
       references: {
-        model: "traces",
-        key: "trace_id",
+        model: Trace,
+        key: "id",
       },
       onDelete: "CASCADE",
     },
     stageId: {
-      type: DataTypes.STRING,
+      type: DataTypes.UUID,
       allowNull: false,
       field: "stage_id",
       references: {
-        model: "stages",
-        key: "stage_id",
+        model: Stage,
+        key: "id",
       },
       onDelete: "CASCADE",
     },
@@ -481,6 +491,7 @@ Step.init(
     timestamps: true,
     underscored: true,
     indexes: [{ fields: ["stage_id"] }, { fields: ["trace_id"] }],
+    paranoid: true,
   }
 );
 
@@ -490,7 +501,6 @@ export interface EventAttributes {
   traceId: string;
   stageId: string | null;
   stepId: string | null;
-  timestamp: Date;
   name: string;
   level: string | null;
   data: JsonValue | null;
@@ -508,7 +518,6 @@ export interface EventCreationAttributes
     | "id"
     | "stageId"
     | "stepId"
-    | "timestamp"
     | "level"
     | "data"
     | "platform"
@@ -527,7 +536,6 @@ export class Event extends Model<
   declare traceId: ForeignKey<Trace["id"]>;
   declare stageId: ForeignKey<Stage["id"]> | null;
   declare stepId: ForeignKey<Step["id"]> | null;
-  declare timestamp: CreationOptional<Date>;
   declare name: string;
   declare level: string | null;
   declare data: JsonValue | null;
@@ -556,43 +564,40 @@ export class Event extends Model<
 Event.init(
   {
     id: {
-      type: DataTypes.STRING,
+      type: DataTypes.UUID,
       primaryKey: true,
-      field: "event_id",
-      defaultValue: () => getUUID(),
+      field: "id",
+      defaultValue: Sequelize.literal("uuidv7()"),
     },
     traceId: {
-      type: DataTypes.STRING,
+      type: DataTypes.UUID,
       allowNull: false,
       field: "trace_id",
       references: {
-        model: "traces",
-        key: "trace_id",
+        model: Trace,
+        key: "id",
       },
       onDelete: "CASCADE",
     },
     stageId: {
-      type: DataTypes.STRING,
+      type: DataTypes.UUID,
       allowNull: true,
       field: "stage_id",
       references: {
-        model: "stages",
-        key: "stage_id",
+        model: Stage,
+        key: "id",
       },
+      onDelete: "CASCADE",
     },
     stepId: {
-      type: DataTypes.STRING,
+      type: DataTypes.UUID,
       allowNull: true,
       field: "step_id",
       references: {
-        model: "steps",
-        key: "step_id",
+        model: Step,
+        key: "id",
       },
-    },
-    timestamp: {
-      type: DataTypes.DATE,
-      allowNull: false,
-      defaultValue: DataTypes.NOW,
+      onDelete: "CASCADE",
     },
     name: {
       type: DataTypes.STRING,
@@ -639,11 +644,8 @@ Event.init(
     tableName: "events",
     timestamps: false,
     underscored: true,
-    indexes: [
-      { fields: ["trace_id", "timestamp"] },
-      { fields: ["stage_id", "timestamp"] },
-      { fields: ["name"] },
-    ],
+    indexes: [{ fields: ["name"] }],
+    paranoid: true,
   }
 );
 

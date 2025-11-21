@@ -6,7 +6,7 @@ import {
 import { Tracer } from "@/features/tracing/service";
 import type { PublishJobData } from "@/shared/types/publish";
 import { PLATFORM_TYPES, STEP_NAMES, EventName } from "@/shared/constants";
-import { BadRequestError } from "@/exceptions";
+import { BadRequestError } from "@/shared/exceptions";
 
 export default function InstagramWorker() {
   createWorker("publish", async (job) => {

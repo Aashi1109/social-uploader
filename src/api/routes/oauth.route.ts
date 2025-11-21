@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { asyncHandler } from "@/api/middleware";
 import config from "@/config";
-import { BadRequestError } from "@/exceptions";
+import { BadRequestError } from "@/shared/exceptions";
 
 import { jnparse } from "@/shared/utils";
 import {

@@ -6,7 +6,7 @@ import {
 import { Tracer } from "@/features";
 import type { PublishJobData } from "@/shared/types/publish";
 import { PLATFORM_TYPES, STEP_NAMES, EventName } from "@/shared/constants";
-import { BadRequestError } from "@/exceptions";
+import { BadRequestError } from "@/shared/exceptions";
 
 export default function YoutubeWorker() {
   createWorker("publish", async (job) => {

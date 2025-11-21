@@ -1,5 +1,5 @@
 import pino from "pino";
-import CustomError from "@/exceptions/CustomError";
+import CustomError from "@/shared/exceptions/CustomError";
 import { NextFunction, Request, Response } from "express";
 
 const logger = pino();
@@ -16,7 +16,7 @@ const errorHandler = (
   err: any,
   req: Request,
   res: Response,
-  next: NextFunction,
+  next: NextFunction
 ) => {
   logger.error({ err, status: err?.status, message: err?.message });
 

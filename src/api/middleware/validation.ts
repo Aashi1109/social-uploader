@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from "express";
-import { BadRequestError } from "@/exceptions";
+import { BadRequestError } from "@/shared/exceptions";
 
 export const validateRequest = (schema: any) => {
   return (req: Request, res: Response, next: NextFunction) => {

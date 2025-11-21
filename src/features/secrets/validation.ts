@@ -4,7 +4,7 @@ import { getSchema } from "@/shared/secrets/schemas";
 
 import { NextFunction, Request, Response } from "express";
 import { PLATFORM_TYPES } from "@/shared/constants";
-import { BadRequestError } from "@/exceptions";
+import { BadRequestError } from "@/shared/exceptions";
 
 /**
  * Generates a validation schema for a specific platform type.

@@ -8,10 +8,9 @@ import {
   NonAttribute,
   HasManyGetAssociationsMixin,
   Association,
+  Sequelize,
 } from "sequelize";
-import { getUUID } from "@/shared/utils/ids";
 import { Platform } from "@/features/platforms/model";
-import { Secret } from "@/features/secrets/model";
 import { getDBConnection } from "@/shared/connections";
 
 // Define attributes
@@ -58,9 +57,9 @@ export class Project extends Model<
 Project.init(
   {
     id: {
-      type: DataTypes.STRING,
+      type: DataTypes.UUID,
       primaryKey: true,
-      defaultValue: () => getUUID(),
+      defaultValue: Sequelize.literal("uuidv7()"),
     },
     slug: {
       type: DataTypes.STRING,
@@ -95,21 +94,9 @@ Project.init(
     timestamps: true,
     underscored: true,
     indexes: [{ fields: ["slug"] }],
+    paranoid: true,
   }
 );
-
-// Define associations
-Platform.belongsTo(Project, {
-  foreignKey: "projectId",
-  as: "project",
-});
-
-// Define associations
-Project.hasMany(Platform, {
-  foreignKey: "projectId",
-  as: "platforms",
-  onDelete: "CASCADE",
-});
 
 (async () => {
   await Project.sync({});

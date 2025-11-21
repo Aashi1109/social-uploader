@@ -1,6 +1,6 @@
 import { Platform } from "./model";
 import { Project } from "@/features/projects/model";
-import { NotFoundError, BadRequestError } from "@/exceptions";
+import { NotFoundError, BadRequestError } from "@/shared/exceptions";
 import { PLATFORM_TYPES } from "@/shared/constants";
 import type { JsonObject } from "@/shared/types/json";
 import config from "@/config";
@@ -8,7 +8,6 @@ import { pick } from "@/shared/utils";
 
 export interface PlatformConfig extends JsonObject {
   mediaProfile?: Record<string, any>;
-  credsRef?: string;
   mapping?: Record<string, any>;
   limits?: Record<string, any>;
   maxDurationSeconds?: number;
@@ -72,7 +71,8 @@ export class PlatformService {
 
   async createPlatform(data: {
     projectId: string;
-    name: PLATFORM_TYPES;
+    name: string;
+    type: PLATFORM_TYPES;
     enabled?: boolean;
     config?: PlatformConfig;
   }) {
@@ -91,7 +91,7 @@ export class PlatformService {
           projectId: data.projectId,
           name: data.name as any,
           enabled: data.enabled ?? true,
-          config: data.config as any,
+          type: data.type,
         },
         {
           include: [
@@ -127,9 +127,6 @@ export class PlatformService {
 
     if (data.enabled !== undefined) {
       platform.enabled = data.enabled;
-    }
-    if (data.config !== undefined) {
-      platform.config = data.config as any;
     }
 
     await platform.save();

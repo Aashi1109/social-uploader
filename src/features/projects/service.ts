@@ -1,5 +1,5 @@
 import { Project } from "./model";
-import { NotFoundError, BadRequestError } from "@/exceptions";
+import { NotFoundError, BadRequestError } from "@/shared/exceptions";
 import { PlatformConfig, ProjectConfig } from "@/shared/types/config";
 import { slugify } from "@/shared/utils";
 import { Op } from "sequelize";

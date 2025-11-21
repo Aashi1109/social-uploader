@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { asyncHandler, bearerAuth } from "@/api/middleware";
-import { BadRequestError, NotFoundError } from "@/exceptions";
+import { BadRequestError, NotFoundError } from "@/shared/exceptions";
 import { validateSecretCreateBody } from "@/features/secrets/validation";
 import { SecretsService } from "@/features";
 
@@ -8,7 +8,7 @@ const secretsService = new SecretsService();
 const router = Router();
 
 router.get(
-  "/templates/:type?",
+  "/templates{/:type}",
   asyncHandler((req, res) => {
     const tpl = secretsService.getTemplate(req.params.type ?? "");
     if (!tpl) throw new NotFoundError("Template not found");

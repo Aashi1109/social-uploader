@@ -10,7 +10,7 @@ import { getRequestContextRequestId } from "@/api/middleware";
 import { setPendingSecretCache } from "./helpers";
 import { getUUID } from "@/shared/utils/ids";
 import { isEmpty } from "@/shared/utils";
-import { NotFoundError } from "@/exceptions";
+import { NotFoundError } from "@/shared/exceptions";
 import { decryptAesGcm, encryptAesGcm } from "@/shared/utils/crypto";
 
 class SecretsService {
@@ -71,7 +71,7 @@ class SecretsService {
     }
 
     const latest = await Secret.create({
-      projectId: input.projectId || null,
+      platformId: input.projectId || null,
       type: input.type as any,
       data: input.data,
       meta: input.meta,
@@ -92,7 +92,7 @@ class SecretsService {
 
   async getForProjects(projectId: string) {
     const secrets = await Secret.findAll({
-      where: { projectId },
+      where: { platformId: projectId },
     });
 
     return secrets;

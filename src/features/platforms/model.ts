@@ -9,19 +9,19 @@ import {
   ForeignKey,
   BelongsToGetAssociationMixin,
   Association,
+  Sequelize,
 } from "sequelize";
 import { PLATFORM_TYPES } from "@/shared/constants";
-import type { JsonValue } from "@/shared/types/json";
-import { getUUID } from "@/shared/utils/ids";
 import { getDBConnection } from "@/shared/connections";
+import { Project } from "../projects/model";
 
 // Define attributes
 export interface PlatformAttributes {
   id: string;
   projectId: string;
-  name: PLATFORM_TYPES;
+  name: string;
+  type: PLATFORM_TYPES;
   enabled: boolean;
-  config: JsonValue | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -30,7 +30,7 @@ export interface PlatformAttributes {
 export interface PlatformCreationAttributes
   extends Optional<
     PlatformAttributes,
-    "id" | "enabled" | "config" | "createdAt" | "updatedAt"
+    "id" | "enabled" | "createdAt" | "updatedAt"
   > {}
 
 // Define the model class
@@ -43,7 +43,6 @@ export class Platform extends Model<
   declare name: PLATFORM_TYPES;
   declare enabled: CreationOptional<boolean>;
   declare type: PLATFORM_TYPES;
-  declare config: JsonValue | null;
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;
 
@@ -60,12 +59,12 @@ export class Platform extends Model<
 Platform.init(
   {
     id: {
-      type: DataTypes.STRING,
+      type: DataTypes.UUID,
       primaryKey: true,
-      defaultValue: () => getUUID(),
+      defaultValue: Sequelize.literal("uuidv7()"),
     },
     projectId: {
-      type: DataTypes.STRING,
+      type: DataTypes.UUID,
       allowNull: false,
       field: "project_id",
       references: {
@@ -79,17 +78,15 @@ Platform.init(
       allowNull: false,
     },
     type: {
-      type: DataTypes.ENUM(...Object.values(PLATFORM_TYPES)),
+      type: DataTypes.ENUM({
+        values: Object.values(PLATFORM_TYPES),
+      }),
       allowNull: false,
     },
     enabled: {
       type: DataTypes.BOOLEAN,
       allowNull: false,
       defaultValue: true,
-    },
-    config: {
-      type: DataTypes.JSONB,
-      allowNull: true,
     },
     createdAt: {
       type: DataTypes.DATE,
@@ -113,9 +110,21 @@ Platform.init(
       { fields: ["project_id"] },
       { unique: true, fields: ["project_id", "type"] },
     ],
+    paranoid: true,
   }
 );
 
 (async () => {
   await Platform.sync({});
 })();
+
+Project.hasMany(Platform, {
+  foreignKey: "projectId",
+  as: "platforms",
+  onDelete: "CASCADE",
+});
+
+Platform.belongsTo(Project, {
+  foreignKey: "projectId",
+  as: "project",
+});

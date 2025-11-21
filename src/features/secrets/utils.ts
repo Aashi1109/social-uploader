@@ -3,7 +3,7 @@ import { Secret } from "./model";
 export const getSafeSecret = (secret: Secret) => {
   return {
     id: secret.id,
-    projectId: secret.projectId,
+    projectId: secret.platformId,
     type: secret.type,
     version: secret.version,
     dataEncrypted: secret.dataEncrypted,
