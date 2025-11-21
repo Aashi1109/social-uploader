@@ -1,9 +1,13 @@
 import { Project } from "./model";
 import { NotFoundError, BadRequestError } from "@/exceptions";
+import { PlatformConfig, ProjectConfig } from "@/shared/types/config";
 import { slugify } from "@/shared/utils";
 import { Op } from "sequelize";
+import { Platform } from "../platforms/model";
+import { PlatformName } from "@/shared/types/publish";
+import { PlatformService } from "../platforms/service";
 
-export class ProjectService {
+export default class ProjectService {
   async listProjects() {
     return await Project.findAll({
       include: [{ association: "platforms" }],
@@ -122,6 +126,31 @@ export class ProjectService {
     const next = (numbers[0] ?? 0) + 1;
     return `${base}-${next}`;
   }
-}
 
-export const projectService = new ProjectService();
+  async getProjectConfig(projectId: string) {
+    const project = await Project.findOne({
+      where: { id: projectId },
+      include: [{ association: "platforms" }, { association: "secrets" }],
+    });
+
+    if (!project) return project;
+
+    // Create a map of secrets by type for quick lookup
+    const secretsByType = new Map(
+      (project.secrets || []).map((secret: any) => [secret.type, secret])
+    );
+
+    // Transform database platforms to config format with associated secrets
+    const platforms = (project?.platforms || []).map((p: Platform) => ({
+      name: p.name as PlatformName,
+      enabled: p.enabled,
+      config: p.config,
+      secret: secretsByType.get(p.name),
+    }));
+
+    return {
+      projectId: project.id,
+      platforms,
+    };
+  }
+}

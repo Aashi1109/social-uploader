@@ -30,6 +30,12 @@ export enum EventName {
   PUBLISH_REQUEST_RECEIVED = "publish.request.received",
   PUBLISH_REQUEST_VALIDATED = "publish.request.validated",
   PUBLISH_REQUEST_QUEUED = "publish.request.queued",
+
+  PLATFORM_VALIDATION_STARTED = "platform.validation.started",
+  PLATFORM_VALIDATION_COMPLETED = "platform.validation.completed",
+  PLATFORM_VALIDATION_FAILED = "platform.validation.failed",
+  PLATFORM_VALIDATION_SKIPPED = "platform.validation.skipped",
+
   PLATFORM_STARTED = "platform.started",
   PREP_STARTED = "prep.started",
   PREP_DONE = "prep.done",

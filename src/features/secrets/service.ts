@@ -42,7 +42,7 @@ class SecretsService {
         (data as YouTubeSecret).clientId,
         (data as YouTubeSecret).clientSecret
       );
-      const hasTokens = isEmpty(restArgs.tokens);
+      const hasTokens = !isEmpty(restArgs.tokens);
       if (hasTokens) {
         vendor = await youtubeService.verify(
           restArgs.tokens as YouTubeSecret["tokens"]

@@ -1,13 +1,14 @@
 import { Router } from "express";
 import { asyncHandler, bearerAuth } from "@/api/middleware";
-import { projectService } from "@/features/projects/service";
 import {
   validateCreateProjectBody,
   validateUpdateProjectBody,
   validateProjectIdParams,
 } from "@/features/projects/validation";
+import { ProjectService } from "@/features";
 
 const router = Router();
+const projectService = new ProjectService();
 
 router.get(
   "/",

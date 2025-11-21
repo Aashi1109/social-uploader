@@ -4,7 +4,7 @@ import { JsonObject } from "./json";
 export type PlatformName = "instagram" | "youtube";
 
 export interface MasterJobData {
-  traceId: string;
+  requestId: string;
   projectId: string;
   mediaUrl: string;
   title?: string;
@@ -13,7 +13,7 @@ export interface MasterJobData {
 }
 
 export interface PublishJobData extends JsonObject {
-  traceId: string;
+  requestId: string;
   projectId: string;
   platform: PlatformName;
   mediaUrl: string;

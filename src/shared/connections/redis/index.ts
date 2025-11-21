@@ -37,7 +37,7 @@ export function getRedisConnection(
 export const getRedisWorkerConnectionConfig = (
   name: REDIS_CONNECTION_NAMES
 ) => ({
-  host: config.redis[name].url?.replace("https://", "") || "",
+  host: config.redis[name].host?.replace("https://", "") || "",
   password: config.redis[name].token,
   tls: {},
   port: config.redis[name].port,

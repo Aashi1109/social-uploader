@@ -3,83 +3,76 @@ import {
   mediaPrepQueue,
   mediaPrepQueueEvents,
 } from "@/core/queues";
-import { eventBus } from "@/core/events";
-import { nowIso } from "@/shared/utils/time";
+import { Tracer } from "@/features/tracing/service";
 import type { PublishJobData } from "@/shared/types/publish";
-import { EventName, PLATFORM_TYPES, STEP_NAMES } from "@/shared/constants";
+import { PLATFORM_TYPES, STEP_NAMES, EventName } from "@/shared/constants";
 import { BadRequestError } from "@/exceptions";
 
 export default function InstagramWorker() {
   createWorker("publish", async (job) => {
-    const data = job.data as PublishJobData;
+    const data = job.data as unknown as PublishJobData;
     if (data.platform !== PLATFORM_TYPES.INSTAGRAM)
       throw new BadRequestError("Invalid platform");
 
-    eventBus.emitEvent({
-      name: EventName.PLATFORM_STARTED,
-      timestamp: nowIso(),
-      traceId: data.traceId,
-      projectId: data.projectId,
+    const trace = Tracer.fromExisting(
+      data.projectId,
+      data.requestId,
+      data.traceId as string
+    );
+
+    const platformSpan = trace.span({
+      name: PLATFORM_TYPES.INSTAGRAM,
+      kind: "PLATFORM",
       platform: PLATFORM_TYPES.INSTAGRAM,
     });
 
-    const prep = await mediaPrepQueue.add("prep", {
-      traceId: data.traceId,
-      projectId: data.projectId,
-      platform: PLATFORM_TYPES.INSTAGRAM,
-      mediaUrl: data.mediaUrl,
-    });
-    await prep.waitUntilFinished(mediaPrepQueueEvents);
+    try {
+      // Prep step
+      platformSpan.event("INFO", EventName.PREP_STARTED, {
+        step: STEP_NAMES.prep,
+      });
 
-    eventBus.emitEvent({
-      name: EventName.UPLOAD_STARTED,
-      timestamp: nowIso(),
-      traceId: data.traceId,
-      projectId: data.projectId,
-      platform: PLATFORM_TYPES.INSTAGRAM,
-      step: STEP_NAMES.upload,
-      status: "running",
-    });
+      const prep = await mediaPrepQueue.add("prep", {
+        traceId: trace.traceId,
+        projectId: data.projectId,
+        platform: PLATFORM_TYPES.INSTAGRAM,
+        mediaUrl: data.mediaUrl,
+      });
+      await prep.waitUntilFinished(mediaPrepQueueEvents);
 
-    await new Promise((r) => setTimeout(r, 300));
-    eventBus.emitEvent({
-      name: EventName.UPLOAD_DONE,
-      timestamp: nowIso(),
-      traceId: data.traceId,
-      projectId: data.projectId,
-      platform: PLATFORM_TYPES.INSTAGRAM,
-      step: STEP_NAMES.upload,
-      status: "success",
-    });
+      platformSpan.event("INFO", EventName.PREP_DONE, {
+        step: STEP_NAMES.prep,
+      });
 
-    eventBus.emitEvent({
-      name: EventName.PUBLISH_STARTED,
-      timestamp: nowIso(),
-      traceId: data.traceId,
-      projectId: data.projectId,
-      platform: PLATFORM_TYPES.INSTAGRAM,
-      step: STEP_NAMES.publish,
-      status: "running",
-    });
-    // MVP: simulate publish
-    await new Promise((r) => setTimeout(r, 200));
-    eventBus.emitEvent({
-      name: EventName.PUBLISH_DONE,
-      timestamp: nowIso(),
-      traceId: data.traceId,
-      projectId: data.projectId,
-      platform: PLATFORM_TYPES.INSTAGRAM,
-      step: STEP_NAMES.publish,
-      status: "success",
-    });
+      // Upload step
+      platformSpan.event("INFO", EventName.UPLOAD_STARTED, {
+        step: STEP_NAMES.upload,
+      });
 
-    eventBus.emitEvent({
-      name: EventName.PLATFORM_FINISHED,
-      timestamp: nowIso(),
-      traceId: data.traceId,
-      projectId: data.projectId,
-      platform: PLATFORM_TYPES.INSTAGRAM,
-    });
-    return true;
+      await new Promise((r) => setTimeout(r, 300));
+
+      platformSpan.event("INFO", EventName.UPLOAD_DONE, {
+        step: STEP_NAMES.upload,
+      });
+
+      // Publish step
+      platformSpan.event("INFO", EventName.PUBLISH_STARTED, {
+        step: STEP_NAMES.publish,
+      });
+
+      await new Promise((r) => setTimeout(r, 200));
+
+      platformSpan.event("INFO", EventName.PUBLISH_DONE, {
+        step: STEP_NAMES.publish,
+      });
+
+      platformSpan.end("SUCCESS");
+      return true;
+    } catch (error) {
+      platformSpan.end("FAILED", {
+        message: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
   });
 }

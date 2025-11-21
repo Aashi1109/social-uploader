@@ -1,19 +1,13 @@
-import type { PlatformName } from './publish';
+import { JsonValue } from "./json";
+import type { PlatformName } from "./publish";
 
 export interface PlatformConfig {
-	name: PlatformName;
-	enabled: boolean;
-	mediaProfile: {
-		maxDurationSeconds?: number;
-		minAspectRatio?: number;
-		maxAspectRatio?: number;
-		maxFileSizeMB?: number;
-	};
+  name: PlatformName;
+  enabled: boolean;
+  config: JsonValue;
 }
 
 export interface ProjectConfig {
-	projectId: string;
-	platforms: PlatformConfig[];
+  projectId: string;
+  platforms: PlatformConfig[];
 }
-
-

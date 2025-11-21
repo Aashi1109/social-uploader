@@ -1,9 +1,10 @@
 import { Router } from "express";
 import { asyncHandler, bearerAuth } from "@/api/middleware";
-import secretsService from "@/features/secrets/service";
 import { BadRequestError, NotFoundError } from "@/exceptions";
 import { validateSecretCreateBody } from "@/features/secrets/validation";
+import { SecretsService } from "@/features";
 
+const secretsService = new SecretsService();
 const router = Router();
 
 router.get(

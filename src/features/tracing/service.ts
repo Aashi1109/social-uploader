@@ -1,5 +1,4 @@
-// tracer.ts
-// Minimal, production-ready-ish tracer with batching and Langfuse-style ergonomics.
+import { getUUIDv7 } from "@/shared/utils/ids";
 
 type TraceStatus =
   | "RUNNING"
@@ -197,7 +196,7 @@ export class Tracer {
       tags?: string[];
     }
   ): Trace {
-    const traceId = ulid();
+    const traceId = getUUIDv7();
     const startedAt = nowISO();
 
     INGESTOR.enqueue({
@@ -269,7 +268,7 @@ export class Trace {
     INGESTOR.enqueue(rec);
   }
 
-  startSpan(params: {
+  span(params: {
     name: string;
     kind?: SpanKind; // default "STEP"
     parentSpanId?: string | null; // null for root/master

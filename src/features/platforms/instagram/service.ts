@@ -110,32 +110,22 @@ class InstagramService {
       const debugUrl = new URL("https://graph.facebook.com/v19.0/debug_token");
       debugUrl.searchParams.set("input_token", userAccessToken);
       debugUrl.searchParams.set("access_token", appToken);
-      const debugRes = await fetch(debugUrl, { method: "GET" });
-      if (!debugRes.ok) {
-        return {
-          errors: { message: "Debug token is not valid" },
-        };
-      }
-      const debugBody: any = await debugRes.json();
+      const debugRes = await axios.get(debugUrl.toString());
+      const debugBody: any = await debugRes.data;
       const isValid = !!debugBody?.data?.is_valid;
       if (!isValid) {
         return {
           errors: { message: "Debug token is not valid" },
         };
       }
-
       const acctUrl = new URL(
         `https://graph.facebook.com/v19.0/${encodeURIComponent(businessAccountId)}`
       );
       acctUrl.searchParams.set("fields", "id,username");
       acctUrl.searchParams.set("access_token", userAccessToken);
-      const acctRes = await fetch(acctUrl, { method: "GET" });
-      if (!acctRes.ok) {
-        return {
-          errors: { message: "Business account is not valid" },
-        };
-      }
-      const acctBody: any = await acctRes.json();
+      const acctRes = await axios.get(acctUrl.toString());
+
+      const acctBody: any = await acctRes.data;
       if (!acctBody?.id) {
         return {
           errors: { message: "Business account is not valid" },

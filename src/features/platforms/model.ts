@@ -13,7 +13,6 @@ import {
 import { PLATFORM_TYPES } from "@/shared/constants";
 import type { JsonValue } from "@/shared/types/json";
 import { getUUID } from "@/shared/utils/ids";
-import { Project } from "@/features/projects/model";
 import { getDBConnection } from "@/shared/connections";
 
 // Define attributes
@@ -43,6 +42,7 @@ export class Platform extends Model<
   declare projectId: ForeignKey<string>;
   declare name: PLATFORM_TYPES;
   declare enabled: CreationOptional<boolean>;
+  declare type: PLATFORM_TYPES;
   declare config: JsonValue | null;
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;
@@ -75,7 +75,11 @@ Platform.init(
       onDelete: "CASCADE",
     },
     name: {
-      type: DataTypes.ENUM(PLATFORM_TYPES.INSTAGRAM, PLATFORM_TYPES.YOUTUBE),
+      type: DataTypes.STRING,
+      allowNull: false,
+    },
+    type: {
+      type: DataTypes.ENUM(...Object.values(PLATFORM_TYPES)),
       allowNull: false,
     },
     enabled: {
@@ -102,12 +106,12 @@ Platform.init(
   },
   {
     sequelize: getDBConnection(),
-    tableName: "project_platforms",
+    tableName: "platforms",
     timestamps: true,
     underscored: true,
     indexes: [
       { fields: ["project_id"] },
-      { unique: true, fields: ["project_id", "name"] },
+      { unique: true, fields: ["project_id", "type"] },
     ],
   }
 );

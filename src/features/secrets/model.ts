@@ -18,24 +18,7 @@ import { Project } from "@/features/projects/model";
 import { getDBConnection } from "@/shared/connections";
 import { ENCRYPTED_FIELDS } from "./constants";
 
-// Columns that contain encrypted data
-
-// Helper: Encrypt plain objects in a single instance
-const encryptFields = (instance: any, checkChanged = false): void => {
-  ENCRYPTED_FIELDS.forEach((column) => {
-    if (checkChanged && !instance.changed?.(column)) return;
-
-    const value = instance[column];
-    instance[column] = encryptAesGcm(value);
-  });
-};
-
-// Helper: Decrypt encrypted fields in place (replaces encrypted string with decrypted object)
-const decryptFields = (instance: any): void => {
-  ENCRYPTED_FIELDS.forEach((column) => {
-    instance[column] = decryptAesGcm(instance[column]);
-  });
-};
+// Columns that contain encrypted data (handled by getters/setters)
 
 // Define attributes
 export interface SecretAttributes {
@@ -65,9 +48,9 @@ export class Secret extends Model<
   declare projectId: ForeignKey<string> | null;
   declare type: PLATFORM_TYPES;
   declare version: CreationOptional<number>;
-  declare data: JsonValue;
+  declare data: JsonValue; // Getter/setter handles encryption transparently
   declare meta: JsonValue | null;
-  declare tokens: JsonValue | null;
+  declare tokens: JsonValue | null; // Getter/setter handles encryption transparently
   declare createdAt: CreationOptional<Date>;
 
   // Associations
@@ -109,6 +92,14 @@ Secret.init(
       type: DataTypes.TEXT,
       allowNull: false,
       field: "data",
+      get() {
+        const raw = this.getDataValue("data" as any);
+        return decryptAesGcm(raw);
+      },
+      set(value: JsonValue) {
+        if (!value) throw new Error("Secret data cannot be empty");
+        this.setDataValue("data" as any, encryptAesGcm(value));
+      },
     },
     meta: {
       type: DataTypes.JSONB,
@@ -117,6 +108,13 @@ Secret.init(
     tokens: {
       type: DataTypes.TEXT,
       allowNull: true,
+      get() {
+        const raw = this.getDataValue("tokens" as any);
+        return decryptAesGcm(raw); // Let it throw if decryption fails
+      },
+      set(value: JsonValue | null) {
+        this.setDataValue("tokens" as any, encryptAesGcm(value));
+      },
     },
     createdAt: {
       type: DataTypes.DATE,
@@ -131,19 +129,6 @@ Secret.init(
     timestamps: false,
     underscored: true,
     indexes: [{ fields: ["type"] }],
-    hooks: {
-      beforeCreate: (secret: Secret) => encryptFields(secret),
-      beforeBulkCreate: (secrets: Secret[]) =>
-        secrets.forEach((s) => encryptFields(s)),
-      beforeUpdate: (secret: Secret) => encryptFields(secret, true),
-      beforeBulkUpdate: (options: any) =>
-        options.attributes && encryptFields(options.attributes),
-      afterFind: (result: Secret | Secret[] | null) => {
-        if (!result) return;
-        const secrets = Array.isArray(result) ? result : [result];
-        secrets.forEach((s) => s && decryptFields(s));
-      },
-    },
   }
 );
 
