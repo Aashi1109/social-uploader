@@ -1,107 +1,103 @@
 import { Platform } from "./model";
-import { Project } from "@/features/projects/model";
 import { NotFoundError, BadRequestError } from "@/shared/exceptions";
 import { PLATFORM_TYPES } from "@/shared/constants";
-import type { JsonObject } from "@/shared/types/json";
 import config from "@/config";
 import { pick } from "@/shared/utils";
+import SecretsService from "../secrets/service";
+import {
+  deletePlatformCacheById,
+  getPlatformCacheById,
+  setPlatformCacheById,
+} from "./helper";
+import { getSafeMaskedSecret } from "../secrets/utils";
+import { JsonSchema } from "@/shared/types/json";
 
-export interface PlatformConfig extends JsonObject {
-  mediaProfile?: Record<string, any>;
-  mapping?: Record<string, any>;
-  limits?: Record<string, any>;
+export interface PlatformConfig extends JsonSchema {
+  mediaProfile?: JsonSchema;
+  mapping?: JsonSchema;
+  limits?: JsonSchema;
   maxDurationSeconds?: number;
   minAspectRatio?: number;
   maxAspectRatio?: number;
   maxFileSizeMB?: number;
 }
 
-export class PlatformService {
-  async listPlatforms(projectId?: string) {
-    return await Platform.findAll({
-      where: projectId ? { projectId } : undefined,
-      include: [
-        {
-          association: "project",
-          attributes: ["id", "name", "slug"],
-        },
-      ],
-      order: [["createdAt", "DESC"]],
-    });
+class PlatformService {
+  #secretService: SecretsService;
+
+  constructor() {
+    this.#secretService = new SecretsService();
   }
 
-  async getPlatformById(id: string) {
-    const platform = await Platform.findOne({
-      where: { id },
-      include: [
-        {
-          association: "project",
-          attributes: ["id", "name", "slug"],
-        },
-      ],
+  async list(projectId?: string) {
+    const platforms = await Platform.findAll({
+      where: projectId ? { projectId } : undefined,
+      order: [["createdAt", "DESC"]],
+      include: [{ association: "secret" }],
     });
 
+    return platforms;
+  }
+
+  async getById(id: string) {
+    let platform = await getPlatformCacheById(id);
+
     if (!platform) {
-      throw new NotFoundError("Platform not found");
+      platform = await Platform.findOne({
+        where: { id },
+        include: [{ association: "secret" }],
+      });
     }
 
-    return platform;
+    if (!platform) throw new NotFoundError("Platform not found");
+
+    // If secret is already included in the association, use it
+    const secret =
+      platform.secret || (await this.#secretService.getById(platform.secretId));
+
+    if (!secret) throw new NotFoundError("Secret not found");
+
+    const maskedSecret = getSafeMaskedSecret(secret);
+    await setPlatformCacheById(platform.id, platform);
+    return { ...platform.toJSON(), secret: maskedSecret };
   }
 
   async getPlatformByProjectAndName(projectId: string, name: PLATFORM_TYPES) {
     const platform = await Platform.findOne({
       where: {
         projectId,
-        name: name as any,
+        name: name,
       },
-      include: [
-        {
-          association: "project",
-          attributes: ["id", "name", "slug"],
-        },
-      ],
+      include: [{ association: "secret" }],
     });
 
-    if (!platform) {
-      throw new NotFoundError("Platform not found");
-    }
+    if (!platform) throw new NotFoundError("Platform not found");
 
     return platform;
   }
 
-  async createPlatform(data: {
+  async create(data: {
     projectId: string;
     name: string;
     type: PLATFORM_TYPES;
     enabled?: boolean;
-    config?: PlatformConfig;
+    secretId: string;
   }) {
-    // Verify project exists
-    const project = await Project.findOne({
-      where: { id: data.projectId },
-    });
-
-    if (!project) {
-      throw new NotFoundError("Project not found");
-    }
-
     try {
-      return await Platform.create(
-        {
-          projectId: data.projectId,
-          name: data.name as any,
-          enabled: data.enabled ?? true,
-          type: data.type,
-        },
-        {
-          include: [
-            {
-              association: "project",
-              attributes: ["id", "name", "slug"],
-            },
-          ],
-        }
-      );
+      const secret = await this.#secretService.getById(data.secretId);
+      if (!secret) throw new NotFoundError("Secret not found");
+      const platform = await Platform.create({
+        projectId: data.projectId,
+        name: data.name,
+        enabled: data.enabled ?? true,
+        type: data.type,
+        secretId: data.secretId,
+      });
+
+      const maskedSecret = getSafeMaskedSecret(secret);
+      await setPlatformCacheById(platform.id, platform);
+
+      return { ...platform.toJSON(), secret: maskedSecret };
     } catch (error: any) {
       if (error.name === "SequelizeUniqueConstraintError") {
         throw new BadRequestError(
@@ -112,7 +108,7 @@ export class PlatformService {
     }
   }
 
-  async updatePlatform(
+  async update(
     id: string,
     data: {
       enabled?: boolean;
@@ -120,40 +116,25 @@ export class PlatformService {
     }
   ) {
     const platform = await Platform.findOne({ where: { id } });
+    if (!platform) throw new NotFoundError("Platform not found");
 
-    if (!platform) {
-      throw new NotFoundError("Platform not found");
-    }
-
-    if (data.enabled !== undefined) {
-      platform.enabled = data.enabled;
-    }
-
+    platform.enabled = data.enabled ?? platform.enabled;
     await platform.save();
-    await platform.reload({
-      include: [
-        {
-          association: "project",
-          attributes: ["id", "name", "slug"],
-        },
-      ],
-    });
 
+    await deletePlatformCacheById(platform.id);
     return platform;
   }
 
-  async deletePlatform(id: string) {
+  async delete(id: string) {
     const platform = await Platform.findOne({ where: { id } });
-
-    if (!platform) {
-      throw new NotFoundError("Platform not found");
-    }
+    if (!platform) throw new NotFoundError("Platform not found");
 
     await platform.destroy();
+    deletePlatformCacheById(platform.id);
     return { success: true };
   }
 
-  async getPlatformBaseConfig(type: PLATFORM_TYPES) {
+  async getBaseConfig(type: PLATFORM_TYPES) {
     if (type === PLATFORM_TYPES.INSTAGRAM) {
       const baseConfig = config.platforms.instagram;
       return pick(baseConfig, [
@@ -169,4 +150,4 @@ export class PlatformService {
   }
 }
 
-export const platformService = new PlatformService();
+export default PlatformService;

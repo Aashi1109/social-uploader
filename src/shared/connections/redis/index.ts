@@ -36,9 +36,15 @@ export function getRedisConnection(
 
 export const getRedisWorkerConnectionConfig = (
   name: REDIS_CONNECTION_NAMES
-) => ({
-  host: config.redis[name].host?.replace("https://", "") || "",
-  password: config.redis[name].token,
-  tls: {},
-  port: config.redis[name].port,
-});
+) => {
+  const host = config.redis[name].host?.replace("https://", "") || "";
+  const isLocalhost =
+    host === "localhost" || host === "127.0.0.1" || host.startsWith("127.");
+
+  return {
+    host,
+    password: config.redis[name].token,
+    ...(isLocalhost ? {} : { tls: {} }),
+    port: isLocalhost ? 6379 : config.redis[name].port,
+  };
+};

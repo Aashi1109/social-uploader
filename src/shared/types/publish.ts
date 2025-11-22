@@ -1,5 +1,4 @@
-import { JobData } from "bullmq";
-import { JsonObject } from "./json";
+import { JsonSchema } from "./json";
 
 export type PlatformName = "instagram" | "youtube";
 
@@ -9,14 +8,15 @@ export interface MasterJobData {
   mediaUrl: string;
   title?: string;
   description?: string;
-  platforms?: PlatformName[];
 }
 
-export interface PublishJobData extends JsonObject {
+export interface PublishJobData extends JsonSchema {
   requestId: string;
   projectId: string;
   platform: PlatformName;
   mediaUrl: string;
   title?: string;
   description?: string;
+  fileData?: string;
+  filePath?: string;
 }

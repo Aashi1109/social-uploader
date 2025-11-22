@@ -5,10 +5,13 @@ import {
   InferAttributes,
   InferCreationAttributes,
   CreationOptional,
+  NonAttribute,
+  HasManyGetAssociationsMixin,
+  Association,
   Sequelize,
 } from "sequelize";
 import { PLATFORM_TYPES } from "@/shared/constants";
-import type { JsonValue } from "@/shared/types/json";
+import type { JsonSchema } from "@/shared/types/json";
 import { encryptAesGcm, decryptAesGcm } from "@/shared/utils/crypto";
 import { getDBConnection } from "@/shared/connections";
 
@@ -18,8 +21,8 @@ export interface SecretAttributes {
   platformIds: string[] | null;
   type: PLATFORM_TYPES;
   version: number;
-  dataEncrypted: string;
-  meta: JsonValue | null;
+  data: JsonSchema;
+  meta: JsonSchema | null;
   tokens: string | null;
   createdAt: Date;
 }
@@ -37,16 +40,20 @@ export class Secret extends Model<
   InferCreationAttributes<Secret>
 > {
   declare id: CreationOptional<string>;
-  declare platformIds: string[] | null;
   declare type: PLATFORM_TYPES;
   declare version: CreationOptional<number>;
-  declare data: JsonValue; // Getter/setter handles encryption transparently
-  declare meta: JsonValue | null;
-  declare tokens: JsonValue | null; // Getter/setter handles encryption transparently
+  declare data: JsonSchema; // Getter returns decrypted JsonSchema
+  declare meta: JsonSchema | null;
+  declare tokens: JsonSchema; // Getter returns decrypted JsonSchema
   declare createdAt: CreationOptional<Date>;
 
-  // Note: Since platformIds is an array, we can't use standard Sequelize associations
-  // Platforms must be loaded manually using WHERE id IN (platformIds)
+  // Associations
+  declare platforms?: NonAttribute<any[]>;
+  declare getPlatforms: HasManyGetAssociationsMixin<any>;
+
+  declare static associations: {
+    platforms: Association<Secret, any>;
+  };
 }
 
 // Initialize the model
@@ -56,13 +63,6 @@ Secret.init(
       type: DataTypes.UUID,
       primaryKey: true,
       defaultValue: Sequelize.literal("uuidv7()"),
-    },
-    platformIds: {
-      type: DataTypes.ARRAY(DataTypes.UUID),
-      allowNull: true,
-      field: "platform_ids",
-      // Note: Sequelize doesn't support FK constraints on array columns
-      // Referential integrity must be maintained at application level or via DB triggers
     },
     type: {
       type: DataTypes.ENUM({
@@ -83,7 +83,7 @@ Secret.init(
         const raw = this.getDataValue("data" as any);
         return decryptAesGcm(raw);
       },
-      set(value: JsonValue) {
+      set(value: JsonSchema) {
         if (!value) throw new Error("Secret data cannot be empty");
         this.setDataValue("data" as any, encryptAesGcm(value));
       },
@@ -99,8 +99,8 @@ Secret.init(
         const raw = this.getDataValue("tokens" as any);
         return decryptAesGcm(raw); // Let it throw if decryption fails
       },
-      set(value: JsonValue | null) {
-        this.setDataValue("tokens" as any, encryptAesGcm(value));
+      set(value: JsonSchema | null) {
+        this.setDataValue("tokens" as any, encryptAesGcm(value!));
       },
     },
     createdAt: {
@@ -123,3 +123,6 @@ Secret.init(
 (async () => {
   await Secret.sync({});
 })();
+
+// Note: Secret.hasMany(Platform) association is defined in Platform model
+// to avoid circular dependency issues

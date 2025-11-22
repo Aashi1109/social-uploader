@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import type { JsonValue } from "@/shared/types/json";
+import type { JsonSchema } from "@/shared/types/json";
 import config from "@/config";
 
 const ALGO = "aes-256-gcm";
@@ -13,7 +13,7 @@ function getKey(): Buffer {
   return Buffer.from(config.masterKey, "hex");
 }
 
-export function encryptAesGcm(plaintext: JsonValue): string {
+export function encryptAesGcm(plaintext: JsonSchema): string {
   const key = getKey();
   const iv = crypto.randomBytes(IV_LENGTH);
   const cipher = crypto.createCipheriv(ALGO, key, iv, {
@@ -25,7 +25,7 @@ export function encryptAesGcm(plaintext: JsonValue): string {
   return Buffer.concat([iv, tag, encrypted]).toString("base64");
 }
 
-export function decryptAesGcm<T = JsonValue>(ciphertextB64: string): T {
+export function decryptAesGcm<T = JsonSchema>(ciphertextB64: string): T {
   const key = getKey();
   const blob = Buffer.from(ciphertextB64, "base64");
   const iv = blob.subarray(0, IV_LENGTH);

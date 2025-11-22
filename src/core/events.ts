@@ -9,5 +9,3 @@ class EventBus extends EventEmitter {
     return this.on("event", listener);
   }
 }
-
-export const eventBus = new EventBus();

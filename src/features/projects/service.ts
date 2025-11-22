@@ -1,11 +1,15 @@
 import { Project } from "./model";
 import { NotFoundError, BadRequestError } from "@/shared/exceptions";
-import { PlatformConfig, ProjectConfig } from "@/shared/types/config";
 import { slugify } from "@/shared/utils";
 import { Op } from "sequelize";
 import { Platform } from "../platforms/model";
 import { PlatformName } from "@/shared/types/publish";
-import { PlatformService } from "../platforms/service";
+import {
+  getProjectCacheById,
+  getProjectCacheBySlug,
+  setProjectCacheById,
+  setProjectCacheBySlug,
+} from "./helper";
 
 export default class ProjectService {
   async listProjects() {
@@ -15,20 +19,28 @@ export default class ProjectService {
     });
   }
 
-  async getProjectById(id: string) {
-    const project = await Project.findOne({
-      where: { id },
-      include: [{ association: "platforms" }],
-    });
-
-    if (!project) {
-      throw new NotFoundError("Project not found");
+  async getById(id: string, noCache = false) {
+    if (!noCache) {
+      const cachedProject = await getProjectCacheById(id);
+      if (cachedProject) return cachedProject;
     }
 
+    const project = await Project.findOne({
+      where: { id },
+    });
+
+    if (!project) throw new NotFoundError("Project not found");
+
+    await setProjectCacheById(id, project);
     return project;
   }
 
-  async getProjectBySlug(slug: string) {
+  async getBySlug(slug: string, noCache = false) {
+    if (!noCache) {
+      const cachedProject = await getProjectCacheBySlug(slug);
+      if (cachedProject) return cachedProject;
+    }
+
     const project = await Project.findOne({
       where: { slug },
       include: [{ association: "platforms" }],
@@ -38,22 +50,18 @@ export default class ProjectService {
       throw new NotFoundError("Project not found");
     }
 
+    await setProjectCacheBySlug(slug, project);
     return project;
   }
 
-  async createProject(data: { name: string; webhookUrl?: string | null }) {
+  async create(data: { name: string; webhookUrl?: string | null }) {
     try {
       const slug = await this.getUniqueSlug(data.name);
-      return await Project.create(
-        {
-          slug,
-          name: data.name,
-          webhookUrl: data.webhookUrl || null,
-        },
-        {
-          include: [{ association: "platforms" }],
-        }
-      );
+      return await Project.create({
+        slug,
+        name: data.name,
+        webhookUrl: data.webhookUrl || null,
+      });
     } catch (error: any) {
       if (error.name === "SequelizeUniqueConstraintError") {
         throw new BadRequestError("Project with this name already exists");
@@ -62,7 +70,7 @@ export default class ProjectService {
     }
   }
 
-  async updateProject(
+  async update(
     id: string,
     data: {
       name?: string;
@@ -75,28 +83,14 @@ export default class ProjectService {
       throw new NotFoundError("Project not found");
     }
 
-    if (data.name !== undefined) {
-      project.name = data.name;
-    }
-    if (data.webhookUrl !== undefined) {
-      project.webhookUrl = data.webhookUrl;
-    }
+    project.name = data.name ?? project.name;
+    project.webhookUrl = data.webhookUrl ?? project.webhookUrl;
 
     await project.save();
-    await project.reload({ include: [{ association: "platforms" }] });
+    await project.reload();
 
+    await setProjectCacheById(id, project);
     return project;
-  }
-
-  async deleteProject(id: string) {
-    const project = await Project.findOne({ where: { id } });
-
-    if (!project) {
-      throw new NotFoundError("Project not found");
-    }
-
-    await project.destroy();
-    return { success: true };
   }
 
   async getUniqueSlug(title: string) {
@@ -127,13 +121,13 @@ export default class ProjectService {
     return `${base}-${next}`;
   }
 
-  async getProjectConfig(projectId: string) {
+  async getConfig(projectId: string) {
     const project = await Project.findOne({
       where: { id: projectId },
       include: [{ association: "platforms" }, { association: "secrets" }],
     });
 
-    if (!project) return project;
+    if (!project) throw new NotFoundError("Project not found");
 
     // Create a map of secrets by type for quick lookup
     const secretsByType = new Map(
@@ -144,7 +138,6 @@ export default class ProjectService {
     const platforms = (project?.platforms || []).map((p: Platform) => ({
       name: p.name as PlatformName,
       enabled: p.enabled,
-      config: p.config,
       secret: secretsByType.get(p.name),
     }));
 
@@ -152,5 +145,13 @@ export default class ProjectService {
       projectId: project.id,
       platforms,
     };
+  }
+
+  async delete(id: string) {
+    const project = await Project.findOne({ where: { id } });
+    if (!project) throw new NotFoundError("Project not found");
+
+    await project.destroy();
+    return { success: true };
   }
 }

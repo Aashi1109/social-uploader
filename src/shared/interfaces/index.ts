@@ -1,5 +1,3 @@
-import { JsonObject, JsonSchema } from "../types/json";
-
 export interface BasePlatformService {
   verify(tokens: any): Promise<VendorVerifyResult>;
   publish(data: any): Promise<VendorPublishResult>;

@@ -1,23 +1,36 @@
-import { Trace, Stage, Step, Event } from "@/features/tracing/models";
+import { masterQueue, getDefaultJobOptions } from "@/core/queues";
 
-type StepRow = {
-  id: string;
-  name: string;
-  status: string;
-  durationMs: number | null;
-};
-type StageRow = {
-  id: string;
-  name: string;
-  platform: string | null;
-  status: string;
-  steps: StepRow[];
-};
+import { Trace } from "@/features/tracing/models";
+import { getRequestContextRequestId } from "@/api/middleware";
 
-class StatusService {
-  async getPublishStatus(traceId: string) {
+export interface PublishRequest {
+  projectId: string;
+  mediaUrl?: string;
+  title?: string;
+  description?: string;
+  fileData?: string;
+  type: "video" | "image";
+}
+
+class PublishService {
+  async create(body: PublishRequest): Promise<{ requestId: string }> {
+    const requestId = getRequestContextRequestId();
+
+    await masterQueue.add(
+      "master",
+      {
+        requestId,
+        ...body,
+      },
+      getDefaultJobOptions()
+    );
+
+    return { requestId };
+  }
+
+  async getPublishStatus(requestId: string, projectId: string) {
     const trace = await Trace.findOne({
-      where: { id: traceId },
+      where: { requestId, projectId },
       include: [
         {
           association: "stages",
@@ -31,17 +44,14 @@ class StatusService {
           association: "events",
         },
       ],
-      order: [[{ model: Event, as: "events" }, "timestamp", "ASC"]],
     });
     if (!trace) {
       return null;
     }
+
     return {
       trace: {
         id: trace.id,
-        status: trace.status,
-        totalStages: trace.totalStages,
-        completedStages: trace.completedStages,
         createdAt: trace.createdAt,
         updatedAt: trace.updatedAt,
       },
@@ -64,4 +74,4 @@ class StatusService {
   }
 }
 
-export default new StatusService();
+export default PublishService;

@@ -1,6 +1,5 @@
 import { Router } from "express";
 import { asyncHandler, bearerAuth } from "@/api/middleware";
-import { platformService } from "@/features/platforms/service";
 import {
   validateCreatePlatformBody,
   validateUpdatePlatformBody,
@@ -8,8 +7,10 @@ import {
   validateProjectIdQuery,
 } from "@/features/projects/validation";
 import { PLATFORM_TYPES } from "@/shared/constants";
+import { PlatformService } from "@/features";
 
 const router = Router();
+const platformService = new PlatformService();
 
 router.get(
   "/",
@@ -17,8 +18,8 @@ router.get(
   validateProjectIdQuery,
   asyncHandler(async (req, res) => {
     const projectId = req.query.projectId as string | undefined;
-    const platforms = await platformService.listPlatforms(projectId);
-    return res.json({ platforms });
+    const platforms = await platformService.list(projectId);
+    return res.json({ data: platforms });
   })
 );
 
@@ -26,10 +27,10 @@ router.get(
   "/config/:type",
   bearerAuth,
   asyncHandler(async (req, res) => {
-    const config = await platformService.getPlatformBaseConfig(
+    const config = await platformService.getBaseConfig(
       req.params.type as PLATFORM_TYPES
     );
-    return res.json({ config });
+    return res.json({ data: config });
   })
 );
 
@@ -38,10 +39,8 @@ router.get(
   bearerAuth,
   validatePlatformIdParams,
   asyncHandler(async (req, res) => {
-    const platform = await platformService.getPlatformById(
-      req.params.id as string
-    );
-    return res.json({ platform });
+    const platform = await platformService.getById(req.params.id as string);
+    return res.json({ data: platform });
   })
 );
 
@@ -50,8 +49,8 @@ router.post(
   bearerAuth,
   validateCreatePlatformBody,
   asyncHandler(async (req, res) => {
-    const platform = await platformService.createPlatform(req.body);
-    return res.status(201).json({ platform });
+    const platform = await platformService.create(req.body);
+    return res.status(201).json({ data: platform });
   })
 );
 
@@ -61,11 +60,11 @@ router.patch(
   validatePlatformIdParams,
   validateUpdatePlatformBody,
   asyncHandler(async (req, res) => {
-    const platform = await platformService.updatePlatform(
+    const platform = await platformService.update(
       req.params.id as string,
       req.body
     );
-    return res.json({ platform });
+    return res.json({ data: platform });
   })
 );
 
@@ -74,7 +73,7 @@ router.delete(
   bearerAuth,
   validatePlatformIdParams,
   asyncHandler(async (req, res) => {
-    await platformService.deletePlatform(req.params.id as string);
+    await platformService.delete(req.params.id as string);
     return res.status(204).send();
   })
 );

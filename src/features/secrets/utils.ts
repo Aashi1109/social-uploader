@@ -1,14 +1,20 @@
+import { maskString } from "@/shared/utils";
 import { Secret } from "./model";
+import { JsonSchema } from "@/shared/types/json";
 
-export const getSafeSecret = (secret: Secret) => {
-  return {
-    id: secret.id,
-    projectId: secret.platformId,
-    type: secret.type,
-    version: secret.version,
-    dataEncrypted: secret.dataEncrypted,
-    meta: secret.meta,
-    createdAt: secret.createdAt,
-    tokens: secret.tokens,
+export const getSafeMaskedSecret = (secret: Secret) => {
+  const maskedData: JsonSchema = {};
+  const secretData = secret.data as JsonSchema;
+  for (const key in secretData) {
+    const value = secretData[key];
+    maskedData[key] = typeof value === "string" ? maskString(value) : value;
+  }
+
+  const maskedSecret = {
+    ...secret.toJSON(),
+    data: maskedData,
   };
+  delete (maskedSecret as any).tokens;
+
+  return maskedSecret;
 };

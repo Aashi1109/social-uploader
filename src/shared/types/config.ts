@@ -1,10 +1,10 @@
-import { JsonValue } from "./json";
+import { JsonSchema } from "./json";
 import type { PlatformName } from "./publish";
 
 export interface PlatformConfig {
   name: PlatformName;
   enabled: boolean;
-  config: JsonValue;
+  config: JsonSchema;
 }
 
 export interface ProjectConfig {

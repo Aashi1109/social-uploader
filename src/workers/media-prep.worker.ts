@@ -9,7 +9,7 @@ export default function MediaPrepWorker() {
     // The parent worker (Instagram/YouTube) already tracks the prep step,
     // so we just do the work here without emitting duplicate events.
     const projectService = new ProjectService();
-    const config = await projectService.getProjectConfig(projectId);
+    const config = await projectService.getConfig(projectId);
     return true;
   });
 }

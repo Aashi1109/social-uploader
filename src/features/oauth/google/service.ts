@@ -1,4 +1,4 @@
-import { JsonObject } from "@/shared/types/json";
+import { JsonSchema } from "@/shared/types/json";
 import { camelCase, formatObjectKeys } from "@/shared/utils";
 import { google } from "googleapis";
 
@@ -25,7 +25,7 @@ export default class GoogleOAuthService {
   }
 
   buildAuthorizationUri(args: {
-    state: string | JsonObject;
+    state: string | JsonSchema;
     redirectUri: string;
     scopes: string[];
     prompt?: "consent" | "select_account" | "none";

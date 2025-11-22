@@ -21,9 +21,9 @@ router.post(
   bearerAuth,
   [validateSecretCreateBody],
   asyncHandler(async (req, res) => {
-    const { projectId, type, data, meta } = req.body;
+    const { platformId, type, data, meta } = req.body;
     const result = await secretsService.create({
-      projectId,
+      platformIds: platformId ? [platformId] : [],
       type,
       data,
       meta,

@@ -1,5 +1,5 @@
 import { Secret } from "./model";
-import type { JsonObject, JsonValue } from "@/shared/types/json";
+import type { JsonSchema } from "@/shared/types/json";
 import { getSchema, PLATFORM_SCHEMAS } from "@/shared/secrets/schemas";
 import { InstagramService } from "@/features/platforms/instagram";
 import YouTubeService from "@/features/platforms/youtube/service";
@@ -20,10 +20,10 @@ class SecretsService {
   }
 
   async create(input: {
-    projectId?: string;
-    type: PLATFORM_TYPES.INSTAGRAM | PLATFORM_TYPES.YOUTUBE;
+    platformIds: string[];
+    type: PLATFORM_TYPES;
     data: InstagramSecret | YouTubeSecret;
-    meta?: JsonObject;
+    meta?: JsonSchema;
     creationId?: string;
     tokens?: YouTubeSecret["tokens"] | InstagramSecret["tokens"];
   }): Promise<{ version: number; data?: VendorPublishResult }> {
@@ -71,12 +71,11 @@ class SecretsService {
     }
 
     const latest = await Secret.create({
-      platformId: input.projectId || null,
-      type: input.type as any,
+      type: input.type,
       data: input.data,
       meta: input.meta,
       version: 1,
-      tokens: restArgs.tokens,
+      tokens: restArgs.tokens as JsonSchema,
     });
 
     return { version: latest.version };
@@ -90,30 +89,13 @@ class SecretsService {
     return secret;
   }
 
-  async getForProjects(projectId: string) {
-    const secrets = await Secret.findAll({
-      where: { platformId: projectId },
-    });
-
-    return secrets;
-  }
-
-  async update(
-    id: string,
-    input: {
-      data: JsonValue;
-      meta?: JsonObject;
-      tokens?: JsonValue;
-    }
-  ) {
+  async update(id: string, meta: JsonSchema) {
     let secret = await Secret.findOne({
       where: { id },
     });
     if (!secret) throw new NotFoundError("Secret not found");
 
-    secret.data = input.data || secret.data;
-    secret.meta = input.meta || secret.meta;
-    secret.tokens = input.tokens || secret.tokens;
+    secret.meta = meta || secret.meta;
     secret = await secret.save();
 
     return secret;
@@ -128,10 +110,10 @@ class SecretsService {
     return secret;
   }
 
-  encrypt(data: JsonValue): string {
+  encrypt(data: JsonSchema): string {
     return encryptAesGcm(data);
   }
-  decrypt<T = JsonValue>(text: string): T {
+  decrypt<T = JsonSchema>(text: string): T {
     return decryptAesGcm<T>(text);
   }
 }

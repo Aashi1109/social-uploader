@@ -14,6 +14,7 @@ import {
 import { PLATFORM_TYPES } from "@/shared/constants";
 import { getDBConnection } from "@/shared/connections";
 import { Project } from "../projects/model";
+import { Secret } from "../secrets/model";
 
 // Define attributes
 export interface PlatformAttributes {
@@ -40,18 +41,23 @@ export class Platform extends Model<
 > {
   declare id: CreationOptional<string>;
   declare projectId: ForeignKey<string>;
-  declare name: PLATFORM_TYPES;
+  declare name: string;
   declare enabled: CreationOptional<boolean>;
   declare type: PLATFORM_TYPES;
+  declare secretId: ForeignKey<string>;
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;
 
   // Associations
-  declare project?: NonAttribute<any>;
-  declare getProject: BelongsToGetAssociationMixin<any>;
+  declare project?: NonAttribute<Project>;
+  declare getProject: BelongsToGetAssociationMixin<Project>;
+
+  declare secret?: NonAttribute<Secret>;
+  declare getSecret: BelongsToGetAssociationMixin<Secret>;
 
   declare static associations: {
-    project: Association<Platform, any>;
+    project: Association<Platform, Project>;
+    secret: Association<Platform, Secret>;
   };
 }
 
@@ -82,6 +88,15 @@ Platform.init(
         values: Object.values(PLATFORM_TYPES),
       }),
       allowNull: false,
+    },
+    secretId: {
+      type: DataTypes.UUID,
+      allowNull: false,
+      field: "secret_id",
+      references: {
+        model: Secret,
+        key: "id",
+      },
     },
     enabled: {
       type: DataTypes.BOOLEAN,
@@ -127,4 +142,15 @@ Project.hasMany(Platform, {
 Platform.belongsTo(Project, {
   foreignKey: "projectId",
   as: "project",
+});
+
+Platform.belongsTo(Secret, {
+  foreignKey: "secretId",
+  as: "secret",
+});
+
+Secret.hasMany(Platform, {
+  foreignKey: "secretId",
+  as: "platforms",
+  onDelete: "RESTRICT",
 });

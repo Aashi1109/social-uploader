@@ -12,8 +12,7 @@ import {
   Association,
   Sequelize,
 } from "sequelize";
-import type { JsonValue } from "@/shared/types/json";
-import { getUUID } from "@/shared/utils/ids";
+import type { JsonSchema } from "@/shared/types/json";
 import { getDBConnection } from "@/shared/connections";
 import { Project } from "../projects/model";
 
@@ -33,7 +32,7 @@ export interface TraceAttributes {
   finalStatus: TraceStatus | null;
   totalStages: number;
   completedStages: number;
-  payload: JsonValue | null;
+  payload: JsonSchema | null;
   createdAt: Date;
   updatedAt: Date;
   endedAt: Date | null;
@@ -61,16 +60,10 @@ export class Trace extends Model<
 > {
   declare id: CreationOptional<string>;
   declare projectId: string;
-  declare idempotencyKey: string | null;
-  declare status: TraceStatus;
-  declare finalStatus: TraceStatus | null;
-  declare totalStages: CreationOptional<number>;
-  declare completedStages: CreationOptional<number>;
-  declare payload: JsonValue | null;
+  declare requestId: string | null;
+  declare payload: JsonSchema | null;
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;
-  declare endedAt: Date | null;
-  declare durationMs: number | null;
 
   // Associations
   declare stages?: NonAttribute<Stage[]>;
@@ -105,31 +98,10 @@ Trace.init(
       },
       onDelete: "CASCADE",
     },
-    idempotencyKey: {
-      type: DataTypes.STRING,
+    requestId: {
+      type: DataTypes.UUID,
       allowNull: true,
-      field: "idempotency_key",
-    },
-    status: {
-      type: DataTypes.ENUM("running", "success", "partial", "failed"),
-      allowNull: false,
-    },
-    finalStatus: {
-      type: DataTypes.ENUM("running", "success", "partial", "failed"),
-      allowNull: true,
-      field: "final_status",
-    },
-    totalStages: {
-      type: DataTypes.INTEGER,
-      allowNull: false,
-      defaultValue: 0,
-      field: "total_stages",
-    },
-    completedStages: {
-      type: DataTypes.INTEGER,
-      allowNull: false,
-      defaultValue: 0,
-      field: "completed_stages",
+      field: "request_id",
     },
     payload: {
       type: DataTypes.JSONB,
@@ -147,16 +119,6 @@ Trace.init(
       defaultValue: DataTypes.NOW,
       field: "updated_at",
     },
-    endedAt: {
-      type: DataTypes.DATE,
-      allowNull: true,
-      field: "ended_at",
-    },
-    durationMs: {
-      type: DataTypes.INTEGER,
-      allowNull: true,
-      field: "duration_ms",
-    },
   },
   {
     sequelize: getDBConnection(),
@@ -165,7 +127,7 @@ Trace.init(
     underscored: true,
     indexes: [
       { fields: ["project_id"] },
-      { unique: true, fields: ["project_id", "idempotency_key"] },
+      { unique: true, fields: ["project_id", "request_id"] },
     ],
     paranoid: true,
   }
@@ -182,11 +144,11 @@ export interface StageAttributes {
   progressCompleted: number;
   progressTotal: number;
   attempt: number;
-  attrs: JsonValue | null;
+  attrs: JsonSchema | null;
   startedAt: Date;
   endedAt: Date | null;
   durationMs: number | null;
-  error: JsonValue | null;
+  error: JsonSchema | null;
   platform: string | null;
   order: number;
 }
@@ -221,11 +183,11 @@ export class Stage extends Model<
   declare progressCompleted: CreationOptional<number>;
   declare progressTotal: CreationOptional<number>;
   declare attempt: CreationOptional<number>;
-  declare attrs: JsonValue | null;
+  declare attrs: JsonSchema | null;
   declare startedAt: CreationOptional<Date>;
   declare endedAt: Date | null;
   declare durationMs: number | null;
-  declare error: JsonValue | null;
+  declare error: JsonSchema | null;
   declare platform: string | null;
   declare order: CreationOptional<number>;
 
@@ -361,8 +323,8 @@ export interface StepAttributes {
   startedAt: Date;
   endedAt: Date | null;
   durationMs: number | null;
-  meta: JsonValue | null;
-  error: JsonValue | null;
+  meta: JsonSchema | null;
+  error: JsonSchema | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -392,8 +354,8 @@ export class Step extends Model<
   declare startedAt: CreationOptional<Date>;
   declare endedAt: Date | null;
   declare durationMs: number | null;
-  declare meta: JsonValue | null;
-  declare error: JsonValue | null;
+  declare meta: JsonSchema | null;
+  declare error: JsonSchema | null;
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;
 
@@ -503,12 +465,12 @@ export interface EventAttributes {
   stepId: string | null;
   name: string;
   level: string | null;
-  data: JsonValue | null;
+  data: JsonSchema | null;
   platform: string | null;
   step: string | null;
   status: string | null;
   durationMs: number | null;
-  meta: JsonValue | null;
+  meta: JsonSchema | null;
   createdAt: Date;
 }
 
@@ -538,12 +500,12 @@ export class Event extends Model<
   declare stepId: ForeignKey<Step["id"]> | null;
   declare name: string;
   declare level: string | null;
-  declare data: JsonValue | null;
+  declare data: JsonSchema | null;
   declare platform: string | null;
   declare step: string | null;
   declare status: string | null;
   declare durationMs: number | null;
-  declare meta: JsonValue | null;
+  declare meta: JsonSchema | null;
   declare createdAt: CreationOptional<Date>;
 
   // Associations

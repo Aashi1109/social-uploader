@@ -17,8 +17,8 @@ export type YouTubeSecret = {
 export type InstagramSecret = {
   appId: string;
   appSecret: string;
-  tokens: string;
   businessAccountId: string;
+  tokens: string;
 };
 
 export const PLATFORM_SCHEMAS: Record<PLATFORM_TYPES, JsonSchema> = {

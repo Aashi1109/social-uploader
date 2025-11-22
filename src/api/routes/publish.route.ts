@@ -1,42 +1,39 @@
 import { Router } from "express";
 import { asyncHandler, bearerAuth, publishRateLimiter } from "@/api/middleware";
-import { statusService } from "@/api/services";
-import eventsService from "@/api/services/events.service";
+import { PublishService } from "@/features";
+import { BadRequestError, NotFoundError } from "@/shared/exceptions";
+import { validatePublishCreate } from "@/features/publish/validation";
 
 const router = Router();
+const publishService = new PublishService();
 
-router.post("/publish", bearerAuth, publishRateLimiter, async (req, res) => {
-  // const parse = PublishRequestSchema.safeParse(req.body);
-  // if (!parse.success) {
-  //   return res
-  //     .status(400)
-  //     .json({ error: "invalid_payload", details: parse.error.flatten() });
-  // }
-  // const { requestId } = await publishService.createPublishRequest(parse.data);
-  // return res.json({ requestId });
-});
-
-router.get(
-  "/publish/:id",
+router.post(
+  "/:projectId",
+  [bearerAuth, publishRateLimiter, validatePublishCreate],
   asyncHandler(async (req, res) => {
-    const data = await statusService.getPublishStatus(req.params.id as string);
-    if (!data) return res.status(404).json({ error: "not_found" });
-    return res.json(data);
+    const { projectId } = req.params;
+    if (!projectId) throw new BadRequestError("Project ID is required");
+    const { requestId } = await publishService.create({
+      projectId,
+      ...req.body,
+    });
+    return res.json({ requestId });
   })
 );
 
 router.get(
-  "/publish/:id/events",
+  "/:id",
   asyncHandler(async (req, res) => {
-    const cursor =
-      typeof req.query.cursor === "string" ? req.query.cursor : undefined;
-    const limit =
-      typeof req.query.limit === "string" ? Number(req.query.limit) : undefined;
-    const page = await eventsService.getTraceEvents(req.params.id as string, {
-      cursor,
-      limit,
-    });
-    return res.json(page);
+    const { projectId, id: requestId } = req.query;
+    if (!projectId || !requestId)
+      throw new BadRequestError("Project ID and request ID are required");
+
+    const data = await publishService.getPublishStatus(
+      requestId as string,
+      projectId as string
+    );
+    if (!data) throw new NotFoundError("Publish not found");
+    return res.json(data);
   })
 );
 

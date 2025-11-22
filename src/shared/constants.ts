@@ -92,8 +92,12 @@ export enum OAUTH_STEP_TYPES {
 }
 
 export const CACHE_NAMESPACE_CONFIG = {
-  Secrets: {
-    namespace: "secrets",
+  Platform: {
+    namespace: "platforms",
+    ttl: 3600 * 24 * 2,
+  },
+  Projects: {
+    namespace: "projects",
     ttl: 3600 * 24,
   },
   PendingSecrets: {

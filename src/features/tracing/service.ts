@@ -1,4 +1,6 @@
 import { getUUIDv7 } from "@/shared/utils/ids";
+import { Trace as TraceModel, Stage, Event as EventModel } from "./models";
+import { logger } from "@/core/logger";
 
 type TraceStatus =
   | "RUNNING"
@@ -90,7 +92,6 @@ type BatchRecord =
 
 // ---- Config (read from env; only ctor requires projectId, requestId) ----
 const CFG = {
-  INGEST_URL: process.env.TRACE_INGEST_URL ?? "", // if empty, logs to console
   BATCH_MAX: Number(process.env.TRACE_BATCH_MAX ?? 100),
   BATCH_MS: Number(process.env.TRACE_BATCH_MS ?? 1000),
   MAX_INFLIGHT: Number(process.env.TRACE_MAX_INFLIGHT ?? 3),
@@ -125,12 +126,14 @@ function childStatusFor(traceStatus: TraceStatus): SpanStatus {
 }
 
 // ---- Transport + Batching ----
-class BatchIngestor {
-  private queue: BatchRecord[] = [];
+class BatchIngestor<T> {
+  private queue: T[] = [];
   private timer: NodeJS.Timeout | null = null;
   private inflight = 0;
 
-  enqueue(item: BatchRecord) {
+  constructor(private readonly postFn: (batch: T[]) => Promise<void>) {}
+
+  enqueue(item: T) {
     this.queue.push(item);
     if (this.queue.length >= CFG.BATCH_MAX) this.flush();
     else this.arm();
@@ -150,7 +153,7 @@ class BatchIngestor {
     const take = this.queue.splice(0, CFG.BATCH_MAX);
     this.inflight++;
     try {
-      await this.post(take);
+      await this.postFn(take);
     } catch (e) {
       // On failure, push back to the front (bounded retry would be nicer)
       this.queue = take.concat(this.queue);
@@ -159,31 +162,197 @@ class BatchIngestor {
       if (this.queue.length) this.arm();
     }
   }
-
-  private async post(batch: BatchRecord[]) {
-    if (!CFG.INGEST_URL) {
-      // Fallback: log (dev/local)
-      // eslint-disable-next-line no-console
-      console.log("[trace:dev-sink]", JSON.stringify(batch));
-      return;
-    }
-    const ctl = new AbortController();
-    const t = setTimeout(() => ctl.abort(), CFG.TIMEOUT_MS);
-    try {
-      const res = await fetch(CFG.INGEST_URL, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ batch }),
-        signal: ctl.signal,
-      });
-      if (!res.ok) throw new Error(`ingest ${res.status}`);
-    } finally {
-      clearTimeout(t);
-    }
-  }
 }
 
-const INGESTOR = new BatchIngestor();
+// Create separate ingestors for each type to maintain insertion order
+const TRACE_INGESTOR = new BatchIngestor<TraceRecord>(async (batch) => {
+  const now = new Date();
+  const tracesToUpsert: any[] = [];
+  const traceIdsToUpdate: string[] = [];
+
+  for (const record of batch) {
+    if (record._t === "trace_start") {
+      tracesToUpsert.push({
+        id: record.traceId,
+        projectId: record.projectId,
+        requestId: record.requestId,
+        payload: record.input,
+        createdAt: now,
+        updatedAt: now,
+      });
+    } else if (record._t === "trace_end") {
+      traceIdsToUpdate.push(record.traceId);
+    }
+  }
+
+  if (tracesToUpsert.length > 0) {
+    await TraceModel.bulkCreate(tracesToUpsert, {
+      updateOnDuplicate: ["updatedAt", "payload"],
+    });
+  }
+
+  if (traceIdsToUpdate.length > 0) {
+    await TraceModel.update(
+      { updatedAt: now },
+      { where: { id: traceIdsToUpdate } }
+    );
+  }
+});
+
+const STAGE_NO_REF_INGESTOR = new BatchIngestor<SpanStartRecord>(
+  async (batch) => {
+    const now = new Date();
+    const stagesToCreate: any[] = [];
+
+    for (const record of batch) {
+      const stageKind = record.kind === "MASTER" ? "master" : "platform";
+      stagesToCreate.push({
+        id: record.spanId,
+        traceId: record.traceId,
+        parentStageId: null,
+        kind: stageKind,
+        name: record.name,
+        status: "running",
+        progressCompleted: 0,
+        progressTotal: 0,
+        attempt: record.attemptNo,
+        attrs: record.attrs || null,
+        startedAt: new Date(record.startedAt),
+        platform: record.platform || null,
+        order: 0,
+      });
+    }
+
+    if (stagesToCreate.length > 0) {
+      await Stage.bulkCreate(stagesToCreate, {
+        updateOnDuplicate: ["status", "attempt", "attrs", "startedAt"],
+      });
+    }
+  }
+);
+
+const STAGE_WITH_REF_INGESTOR = new BatchIngestor<SpanStartRecord>(
+  async (batch) => {
+    const now = new Date();
+    const stagesToCreate: any[] = [];
+
+    for (const record of batch) {
+      const stageKind = record.kind === "MASTER" ? "master" : "platform";
+      stagesToCreate.push({
+        id: record.spanId,
+        traceId: record.traceId,
+        parentStageId: record.parentSpanId,
+        kind: stageKind,
+        name: record.name,
+        status: "running",
+        progressCompleted: 0,
+        progressTotal: 0,
+        attempt: record.attemptNo,
+        attrs: record.attrs || null,
+        startedAt: new Date(record.startedAt),
+        platform: record.platform || null,
+        order: 0,
+      });
+    }
+
+    if (stagesToCreate.length > 0) {
+      await Stage.bulkCreate(stagesToCreate, {
+        updateOnDuplicate: ["status", "attempt", "attrs", "startedAt"],
+      });
+    }
+  }
+);
+
+const STAGE_UPDATE_INGESTOR = new BatchIngestor<SpanEndRecord>(
+  async (batch) => {
+    const updates: Array<{ spanId: string; updates: any }> = [];
+
+    for (const record of batch) {
+      let stageStatus: "running" | "completed" | "failed";
+      switch (record.status) {
+        case "SUCCESS":
+        case "SKIPPED":
+          stageStatus = "completed";
+          break;
+        case "FAILED":
+        case "TIMEOUT":
+        case "CANCELLED":
+          stageStatus = "failed";
+          break;
+        default:
+          stageStatus = "running";
+      }
+
+      updates.push({
+        spanId: record.spanId,
+        updates: {
+          status: stageStatus,
+          endedAt: new Date(record.endedAt),
+          durationMs: record.durationMs,
+          error: record.error,
+        },
+      });
+    }
+
+    if (updates.length > 0) {
+      const promises = updates.map(({ spanId, updates }) =>
+        Stage.update(updates, { where: { id: spanId } })
+      );
+      await Promise.all(promises);
+    }
+  }
+);
+
+const EVENT_INGESTOR = new BatchIngestor<EventRecord | TraceEventRecord>(
+  async (batch) => {
+    const now = new Date();
+    const eventsToCreate: any[] = [];
+
+    // Get all unique spanIds for span events to fetch stages in bulk
+    const spanIds = [
+      ...new Set(
+        batch
+          .filter((r) => r._t === "span_event")
+          .map((r) => (r as EventRecord).spanId)
+      ),
+    ];
+
+    const stages =
+      spanIds.length > 0 ? await Stage.findAll({ where: { id: spanIds } }) : [];
+    const stageMap = new Map(stages.map((s) => [s.id, s]));
+
+    for (const record of batch) {
+      if (record._t === "span_event") {
+        const stage = stageMap.get(record.spanId);
+        if (stage) {
+          eventsToCreate.push({
+            traceId: stage.traceId,
+            stageId: record.spanId,
+            stepId: null,
+            name: record.name,
+            level: record.level,
+            data: record.data,
+            createdAt: now,
+          });
+        }
+      } else if (record._t === "trace_event") {
+        eventsToCreate.push({
+          traceId: record.traceId,
+          stageId: null,
+          stepId: null,
+          name: record.name,
+          level: record.level,
+          data: record.data,
+          createdAt: now,
+        });
+      }
+    }
+
+    if (eventsToCreate.length > 0) {
+      await EventModel.bulkCreate(eventsToCreate);
+    }
+  }
+);
 
 // ---- Public API: Tracer → Trace → Span ----
 export class Tracer {
@@ -199,7 +368,7 @@ export class Tracer {
     const traceId = getUUIDv7();
     const startedAt = nowISO();
 
-    INGESTOR.enqueue({
+    TRACE_INGESTOR.enqueue({
       _t: "trace_start",
       traceId,
       projectId,
@@ -223,8 +392,12 @@ export class Tracer {
   }
 
   static async flush(): Promise<void> {
-    // @ts-ignore
-    if (INGESTOR?.flush) await INGESTOR.flush();
+    // Flush in order: traces → stages without refs → stages with refs → updates → events
+    await TRACE_INGESTOR.flush();
+    await STAGE_NO_REF_INGESTOR.flush();
+    await STAGE_WITH_REF_INGESTOR.flush();
+    await STAGE_UPDATE_INGESTOR.flush();
+    await EVENT_INGESTOR.flush();
   }
 }
 
@@ -265,7 +438,7 @@ export class Trace {
       data,
       seq: ++this.traceEventSeq,
     };
-    INGESTOR.enqueue(rec);
+    EVENT_INGESTOR.enqueue(rec);
   }
 
   span(params: {
@@ -321,7 +494,7 @@ export class Trace {
       new Date(endedAt).getTime() - new Date(this.startedAt).getTime()
     );
 
-    INGESTOR.enqueue({
+    TRACE_INGESTOR.enqueue({
       _t: "trace_end",
       traceId: this.traceId,
       projectId: this.projectId,
@@ -334,7 +507,7 @@ export class Trace {
 }
 
 class Span {
-  public readonly spanId: string = ulid();
+  public readonly spanId: string = getUUIDv7();
   private status: SpanStatus = "RUNNING";
   private eventSeq = 0;
   private endedAt?: ISODate;
@@ -387,7 +560,12 @@ class Span {
       attrs: this.meta.attrs,
       startedAt: this.startedAt,
     };
-    INGESTOR.enqueue(rec);
+    // Route to the correct ingestor based on whether it has a parent
+    if (this.meta.parentSpanId) {
+      STAGE_WITH_REF_INGESTOR.enqueue(rec);
+    } else {
+      STAGE_NO_REF_INGESTOR.enqueue(rec);
+    }
   }
 
   getId(): string {
@@ -417,7 +595,7 @@ class Span {
       data,
       seq: ++this.eventSeq,
     };
-    INGESTOR.enqueue(rec);
+    EVENT_INGESTOR.enqueue(rec);
   }
 
   end(
@@ -442,7 +620,7 @@ class Span {
       endedAt,
       durationMs,
     };
-    INGESTOR.enqueue(rec);
+    STAGE_UPDATE_INGESTOR.enqueue(rec);
   }
 
   endIfRunning(status: SpanStatus, endedAt?: ISODate) {
@@ -454,14 +632,11 @@ class Span {
 
 // Optional: flush on process exit (best-effort)
 process.once("beforeExit", async () => {
-  // @ts-ignore
-  if (INGESTOR?.flush) await INGESTOR.flush();
+  await Tracer.flush();
 });
 process.once("SIGTERM", async () => {
-  // @ts-ignore
-  if (INGESTOR?.flush) await INGESTOR.flush();
+  await Tracer.flush();
 });
 process.once("SIGINT", async () => {
-  // @ts-ignore
-  if (INGESTOR?.flush) await INGESTOR.flush();
+  await Tracer.flush();
 });

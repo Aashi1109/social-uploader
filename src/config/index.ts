@@ -36,6 +36,7 @@ const config = {
   sentry: {
     dsn: process.env.SENTRY_DSN,
   },
+  tmpDir: process.env.TMP_DIR || "./tmp",
   platforms: {
     instagram: {
       graphUrl: process.env.INSTAGRAM_GRAPH_URL,

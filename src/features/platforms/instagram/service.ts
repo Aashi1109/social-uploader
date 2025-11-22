@@ -1,4 +1,4 @@
-import type { JsonObject, JsonValue } from "@/shared/types/json";
+import type { JsonSchema } from "@/shared/types/json";
 import type { InstagramSecret } from "@/shared/secrets/schemas";
 import config from "@/config";
 import { createSearchParams, snakeCase } from "@/shared/utils";
@@ -98,7 +98,7 @@ class InstagramService {
   }
 
   async verify(
-    data: InstagramSecret & JsonObject
+    data: InstagramSecret & JsonSchema
   ): Promise<VendorVerifyResult> {
     try {
       const appId = String(data.appId || "");

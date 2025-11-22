@@ -1,6 +1,6 @@
 import { Queue, QueueEvents, Worker, JobsOptions, Job } from "bullmq";
 import { QUEUE_NAMES, REDIS_CONNECTION_NAMES } from "@/shared/constants";
-import type { JsonObject } from "@/shared/types/json";
+import type { JsonSchema } from "@/shared/types/json";
 import { logger } from "@/core/logger";
 import { getRedisWorkerConnectionConfig } from "@/shared/connections/redis";
 
@@ -24,14 +24,14 @@ export const mediaPrepQueueEvents = new QueueEvents(QUEUE_NAMES.mediaPrep, {
 
 export function getDefaultJobOptions(): JobsOptions {
   return {
-    attempts: 3,
+    attempts: 1,
     backoff: { type: "exponential", delay: 1000 },
     removeOnComplete: 1000,
     removeOnFail: 1000,
   };
 }
 
-export function createWorker<D = JsonObject>(
+export function createWorker<D = JsonSchema>(
   name: string,
   processor: (job: Job<D>) => Promise<boolean>,
   concurrency = 5

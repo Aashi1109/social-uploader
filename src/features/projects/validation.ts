@@ -30,9 +30,10 @@ export interface PlatformConfig {
 
 export interface CreatePlatformBody {
   projectId: string;
-  name: PLATFORM_TYPES;
+  name: string;
+  type: PLATFORM_TYPES;
   enabled?: boolean;
-  config?: PlatformConfig;
+  secretId: string;
 }
 
 export interface UpdatePlatformBody {
@@ -93,15 +94,20 @@ export const platformConfigSchema: JSONSchemaType<PlatformConfig> = {
 
 export const createPlatformSchema: JSONSchemaType<CreatePlatformBody> = {
   type: "object",
-  required: ["projectId", "name"],
+  required: ["projectId", "name", "type", "secretId"],
   properties: {
     projectId: { type: "string", minLength: 1 },
     name: {
       type: "string",
-      enum: [PLATFORM_TYPES.INSTAGRAM, PLATFORM_TYPES.YOUTUBE],
+      nullable: false,
     },
-    enabled: { type: "boolean", nullable: true },
-    config: { ...platformConfigSchema, nullable: true },
+    enabled: { type: "boolean", nullable: true, default: false },
+    secretId: { type: "string", format: "uuid" },
+    type: {
+      type: "string",
+      enum: Object.values(PLATFORM_TYPES),
+      nullable: false,
+    },
   },
   additionalProperties: false,
 };
