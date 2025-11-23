@@ -19,11 +19,15 @@ export enum DB_CONNECTION_NAMES {
 
 export const QUEUE_NAMES = {
   master: "master",
-  publish: "publish",
   mediaPrep: "media-prep",
 } as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
+
+// Generate platform-specific queue names dynamically
+export function getPlatformQueueName(platform: PLATFORM_TYPES): string {
+  return `publish-${platform}`;
+}
 
 // Canonical event names (centralized)
 export enum EventName {

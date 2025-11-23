@@ -1,5 +1,5 @@
 import { getUUIDv7 } from "@/shared/utils/ids";
-import { Trace as TraceModel, Stage, Event as EventModel } from "./models";
+import { Trace as TraceModel, Step, Event as EventModel } from "./models";
 import { logger } from "@/core/logger";
 
 type TraceStatus =
@@ -199,116 +199,140 @@ const TRACE_INGESTOR = new BatchIngestor<TraceRecord>(async (batch) => {
   }
 });
 
-const STAGE_NO_REF_INGESTOR = new BatchIngestor<SpanStartRecord>(
+const STEP_NO_REF_INGESTOR = new BatchIngestor<SpanStartRecord>(
   async (batch) => {
     const now = new Date();
-    const stagesToCreate: any[] = [];
+    const stepsToCreate: any[] = [];
 
     for (const record of batch) {
-      const stageKind = record.kind === "MASTER" ? "master" : "platform";
-      stagesToCreate.push({
+      const stepKind =
+        record.kind === "MASTER"
+          ? "master"
+          : record.kind === "PLATFORM"
+            ? "platform"
+            : "step";
+      stepsToCreate.push({
         id: record.spanId,
         traceId: record.traceId,
-        parentStageId: null,
-        kind: stageKind,
+        parentStepId: null,
+        kind: stepKind,
         name: record.name,
         status: "running",
-        progressCompleted: 0,
-        progressTotal: 0,
         attempt: record.attemptNo,
         attrs: record.attrs || null,
         startedAt: new Date(record.startedAt),
         platform: record.platform || null,
-        order: 0,
+        meta: null,
+        createdAt: now,
+        updatedAt: now,
       });
     }
 
-    if (stagesToCreate.length > 0) {
-      await Stage.bulkCreate(stagesToCreate, {
-        updateOnDuplicate: ["status", "attempt", "attrs", "startedAt"],
+    if (stepsToCreate.length > 0) {
+      await Step.bulkCreate(stepsToCreate, {
+        updateOnDuplicate: [
+          "status",
+          "attempt",
+          "attrs",
+          "startedAt",
+          "updatedAt",
+        ],
       });
     }
   }
 );
 
-const STAGE_WITH_REF_INGESTOR = new BatchIngestor<SpanStartRecord>(
+const STEP_WITH_REF_INGESTOR = new BatchIngestor<SpanStartRecord>(
   async (batch) => {
     const now = new Date();
-    const stagesToCreate: any[] = [];
+    const stepsToCreate: any[] = [];
 
     for (const record of batch) {
-      const stageKind = record.kind === "MASTER" ? "master" : "platform";
-      stagesToCreate.push({
+      const stepKind =
+        record.kind === "MASTER"
+          ? "master"
+          : record.kind === "PLATFORM"
+            ? "platform"
+            : "step";
+      stepsToCreate.push({
         id: record.spanId,
         traceId: record.traceId,
-        parentStageId: record.parentSpanId,
-        kind: stageKind,
+        parentStepId: record.parentSpanId,
+        kind: stepKind,
         name: record.name,
         status: "running",
-        progressCompleted: 0,
-        progressTotal: 0,
         attempt: record.attemptNo,
         attrs: record.attrs || null,
         startedAt: new Date(record.startedAt),
         platform: record.platform || null,
-        order: 0,
+        meta: null,
+        createdAt: now,
+        updatedAt: now,
       });
     }
 
-    if (stagesToCreate.length > 0) {
-      await Stage.bulkCreate(stagesToCreate, {
-        updateOnDuplicate: ["status", "attempt", "attrs", "startedAt"],
+    if (stepsToCreate.length > 0) {
+      await Step.bulkCreate(stepsToCreate, {
+        updateOnDuplicate: [
+          "status",
+          "attempt",
+          "attrs",
+          "startedAt",
+          "updatedAt",
+        ],
       });
     }
   }
 );
 
-const STAGE_UPDATE_INGESTOR = new BatchIngestor<SpanEndRecord>(
-  async (batch) => {
-    const updates: Array<{ spanId: string; updates: any }> = [];
+const STEP_UPDATE_INGESTOR = new BatchIngestor<SpanEndRecord>(async (batch) => {
+  const now = new Date();
+  const updates: Array<{ spanId: string; updates: any }> = [];
 
-    for (const record of batch) {
-      let stageStatus: "running" | "completed" | "failed";
-      switch (record.status) {
-        case "SUCCESS":
-        case "SKIPPED":
-          stageStatus = "completed";
-          break;
-        case "FAILED":
-        case "TIMEOUT":
-        case "CANCELLED":
-          stageStatus = "failed";
-          break;
-        default:
-          stageStatus = "running";
-      }
-
-      updates.push({
-        spanId: record.spanId,
-        updates: {
-          status: stageStatus,
-          endedAt: new Date(record.endedAt),
-          durationMs: record.durationMs,
-          error: record.error,
-        },
-      });
+  for (const record of batch) {
+    let stepStatus: "running" | "completed" | "failed" | "skipped";
+    switch (record.status) {
+      case "SUCCESS":
+        stepStatus = "completed";
+        break;
+      case "SKIPPED":
+        stepStatus = "skipped";
+        break;
+      case "FAILED":
+      case "TIMEOUT":
+      case "CANCELLED":
+        stepStatus = "failed";
+        break;
+      default:
+        stepStatus = "running";
     }
 
-    if (updates.length > 0) {
-      const promises = updates.map(({ spanId, updates }) =>
-        Stage.update(updates, { where: { id: spanId } })
-      );
-      await Promise.all(promises);
-    }
+    updates.push({
+      spanId: record.spanId,
+      updates: {
+        status: stepStatus,
+        endedAt: new Date(record.endedAt),
+        durationMs: record.durationMs,
+        error: record.error,
+        updatedAt: now,
+      },
+    });
   }
-);
+
+  if (updates.length > 0) {
+    const promises = updates.map(({ spanId, updates }) =>
+      Step.update(updates, { where: { id: spanId } })
+    );
+    await Promise.all(promises);
+  }
+});
 
 const EVENT_INGESTOR = new BatchIngestor<EventRecord | TraceEventRecord>(
   async (batch) => {
     const now = new Date();
     const eventsToCreate: any[] = [];
 
-    // Get all unique spanIds for span events to fetch stages in bulk
+    // Get all unique spanIds for span events to fetch steps in bulk
     const spanIds = [
       ...new Set(
         batch
@@ -317,18 +341,17 @@ const EVENT_INGESTOR = new BatchIngestor<EventRecord | TraceEventRecord>(
       ),
     ];
 
-    const stages =
-      spanIds.length > 0 ? await Stage.findAll({ where: { id: spanIds } }) : [];
-    const stageMap = new Map(stages.map((s) => [s.id, s]));
+    const steps =
+      spanIds.length > 0 ? await Step.findAll({ where: { id: spanIds } }) : [];
+    const stepMap = new Map(steps.map((s) => [s.id, s]));
 
     for (const record of batch) {
       if (record._t === "span_event") {
-        const stage = stageMap.get(record.spanId);
-        if (stage) {
+        const step = stepMap.get(record.spanId);
+        if (step) {
           eventsToCreate.push({
-            traceId: stage.traceId,
-            stageId: record.spanId,
-            stepId: null,
+            traceId: step.traceId,
+            stepId: record.spanId,
             name: record.name,
             level: record.level,
             data: record.data,
@@ -338,7 +361,6 @@ const EVENT_INGESTOR = new BatchIngestor<EventRecord | TraceEventRecord>(
       } else if (record._t === "trace_event") {
         eventsToCreate.push({
           traceId: record.traceId,
-          stageId: null,
           stepId: null,
           name: record.name,
           level: record.level,
@@ -392,11 +414,11 @@ export class Tracer {
   }
 
   static async flush(): Promise<void> {
-    // Flush in order: traces → stages without refs → stages with refs → updates → events
+    // Flush in order: traces → steps without refs → steps with refs → updates → events
     await TRACE_INGESTOR.flush();
-    await STAGE_NO_REF_INGESTOR.flush();
-    await STAGE_WITH_REF_INGESTOR.flush();
-    await STAGE_UPDATE_INGESTOR.flush();
+    await STEP_NO_REF_INGESTOR.flush();
+    await STEP_WITH_REF_INGESTOR.flush();
+    await STEP_UPDATE_INGESTOR.flush();
     await EVENT_INGESTOR.flush();
   }
 }
@@ -562,9 +584,9 @@ class Span {
     };
     // Route to the correct ingestor based on whether it has a parent
     if (this.meta.parentSpanId) {
-      STAGE_WITH_REF_INGESTOR.enqueue(rec);
+      STEP_WITH_REF_INGESTOR.enqueue(rec);
     } else {
-      STAGE_NO_REF_INGESTOR.enqueue(rec);
+      STEP_NO_REF_INGESTOR.enqueue(rec);
     }
   }
 
@@ -620,7 +642,7 @@ class Span {
       endedAt,
       durationMs,
     };
-    STAGE_UPDATE_INGESTOR.enqueue(rec);
+    STEP_UPDATE_INGESTOR.enqueue(rec);
   }
 
   endIfRunning(status: SpanStatus, endedAt?: ISODate) {

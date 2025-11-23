@@ -60,4 +60,17 @@ router.get(
   })
 );
 
+router.get(
+  "/:id/refresh",
+  bearerAuth,
+  asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    if (!id || typeof id !== "string")
+      throw new BadRequestError("Id is required");
+
+    const secret = await secretsService.refresh(id);
+    return res.json(secret);
+  })
+);
+
 export default router;

@@ -1,4 +1,4 @@
-import { createWorker, publishQueue } from "@/core/queues";
+import { createWorker, getPlatformQueue } from "@/core/queues";
 import {
   Tracer,
   YouTubeService,
@@ -63,7 +63,10 @@ export default function MasterWorker() {
       });
 
       const tmpDir = config.tmpDir;
-      await mkdir(tmpDir, { recursive: true });
+
+      // Create request-specific folder
+      const requestFolder = join(tmpDir, trace.traceId);
+      await mkdir(requestFolder, { recursive: true });
 
       // Download file
       const response = await axios.get(fileUrl, {
@@ -71,22 +74,28 @@ export default function MasterWorker() {
         timeout: 300000, // 5 minutes timeout
       });
 
-      // Get extension from Content-Type header
+      // Get extension from Content-Type header and save as base.{ext}
       const contentType = response.headers["content-type"];
       const extension = getExtensionFromContentType(contentType);
-      const fileName = `${trace.traceId}${extension}`;
-      const filePath = join(tmpDir, fileName);
+      const fileName = `base${extension}`;
+      const filePath = join(requestFolder, fileName);
 
       await writeFile(filePath, Buffer.from(response.data));
 
       masterSpan.event("INFO", "file.download.completed", {
         filePath,
+        requestFolder,
         size: response.data.byteLength,
       });
 
       logger.info(
-        { traceId: trace.traceId, filePath, size: response.data.byteLength },
-        "File downloaded successfully"
+        {
+          traceId: trace.traceId,
+          requestFolder,
+          filePath,
+          size: response.data.byteLength,
+        },
+        "File downloaded successfully to request folder"
       );
       const platformService = new PlatformService();
       const platforms = await platformService.list(data.projectId);
@@ -159,16 +168,30 @@ export default function MasterWorker() {
 
       for (const platform of platforms) {
         if (!platform.enabled) continue;
-        await publishQueue.add("publish", {
+
+        // Get platform-specific queue dynamically
+        const queue = getPlatformQueue(platform.type);
+
+        await queue.add("publish", {
           traceId: trace.traceId,
           requestId: data.requestId,
           projectId: data.projectId,
-          platform: platform.name,
+          platform: platform.type,
+          platformId: platform.id,
           mediaUrl: data.mediaUrl,
           filePath,
           title: data.title,
           description: data.description,
         });
+
+        logger.info(
+          {
+            platform: platform.type,
+            queue: queue.name,
+            traceId: trace.traceId,
+          },
+          "Enqueued platform job"
+        );
       }
 
       masterSpan.end("SUCCESS");

@@ -23,12 +23,18 @@ router.get(
     if (!code || !stateParam) {
       throw new BadRequestError("invalid_callback_params");
     }
-    const requestId = stateParam.requestId;
+    const { requestId, isRefresh, secretId } = stateParam;
     if (!requestId) throw new BadRequestError("Request ID is required");
-
-    const secretData = await getPendingSecretCache(requestId);
-    if (!secretData) throw new BadRequestError("Secret Data not found");
-    const decodedData: any = secretsService.decrypt(secretData as string);
+    const isRefreshSecret = isRefresh && secretId;
+    let decodedData: any;
+    if (isRefreshSecret) {
+      const secret = await secretsService.getById(secretId);
+      decodedData = { data: secret.data };
+    } else {
+      const secretData = await getPendingSecretCache(requestId);
+      if (!secretData) throw new BadRequestError("Secret Data not found");
+      decodedData = secretsService.decrypt(secretData as string);
+    }
     const { clientId, clientSecret } = decodedData.data as YouTubeSecret;
     const googleOAuthService = new GoogleOAuthService(clientId, clientSecret);
     const tokens = await googleOAuthService.exchangeAuthCodeForTokens(
@@ -36,14 +42,30 @@ router.get(
       config.platforms.youtube.redirectUri || ""
     );
 
-    const secret = await secretsService.create({
-      ...decodedData,
-      tokens,
-    });
+    let data: any;
+    if (isRefreshSecret) {
+      const secret = await secretsService.update(secretId, {
+        tokens,
+      });
+      data = {
+        version: secret.version,
+        id: secret.id,
+        message: "Secret updated successfully",
+      };
+    } else {
+      const secret = await secretsService.create({
+        ...decodedData,
+        tokens,
+      });
+      await deletePendingSecretCache(requestId);
+      data = {
+        version: secret.version,
+        id: secret.id,
+        message: "Secret created successfully",
+      };
+    }
 
-    await deletePendingSecretCache(requestId);
-
-    return res.status(201).json({ data: secret });
+    return res.status(201).json(data);
   })
 );
 

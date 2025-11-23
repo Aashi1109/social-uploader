@@ -24,9 +24,8 @@ class SecretsService {
     type: PLATFORM_TYPES;
     data: InstagramSecret | YouTubeSecret;
     meta?: JsonSchema;
-    creationId?: string;
     tokens?: YouTubeSecret["tokens"] | InstagramSecret["tokens"];
-  }): Promise<{ version: number; data?: VendorPublishResult }> {
+  }): Promise<{ version: number; id?: string; data?: VendorPublishResult }> {
     const { type, data, ...restArgs } = input;
 
     let vendor: VendorVerifyResult | undefined;
@@ -48,7 +47,7 @@ class SecretsService {
           restArgs.tokens as YouTubeSecret["tokens"]
         );
       } else {
-        vendor = await youtubeService.initOAuth();
+        vendor = youtubeService.initOAuth();
       }
     }
 
@@ -62,9 +61,9 @@ class SecretsService {
       await setPendingSecretCache(requestId!, encryptedData);
       return {
         version: -1,
+
         data: {
           requestId: getRequestContextRequestId(),
-          creationId: getUUID(),
           ...vendor.data,
         },
       };
@@ -78,24 +77,46 @@ class SecretsService {
       tokens: restArgs.tokens as JsonSchema,
     });
 
-    return { version: latest.version };
+    return { version: latest.version, id: latest.id };
   }
 
   async getById(id: string) {
     const secret = await Secret.findOne({
       where: { id },
     });
+    if (!secret) throw new NotFoundError("Secret not found");
 
     return secret;
   }
 
-  async update(id: string, meta: JsonSchema) {
+  async update(
+    id: string,
+    input: {
+      meta?: JsonSchema;
+      tokens?: YouTubeSecret["tokens"] | InstagramSecret["tokens"];
+    }
+  ) {
+    const { meta, tokens } = input;
     let secret = await Secret.findOne({
       where: { id },
     });
     if (!secret) throw new NotFoundError("Secret not found");
 
     secret.meta = meta || secret.meta;
+
+    // IMPORTANT: Merge tokens instead of replacing to preserve refresh token
+    if (tokens) {
+      const existingTokens = ((secret.tokens as JsonSchema) || {}) as Record<
+        string,
+        any
+      >;
+      const newTokens = tokens as Record<string, any>;
+      secret.tokens = {
+        ...existingTokens,
+        ...newTokens,
+      } as JsonSchema;
+    }
+
     secret = await secret.save();
 
     return secret;
@@ -107,6 +128,30 @@ class SecretsService {
     });
     if (!secret) throw new NotFoundError("Secret not found");
     await secret.destroy();
+    return secret;
+  }
+
+  async refresh(id: string) {
+    const secret = await Secret.findOne({
+      where: { id },
+    });
+    if (!secret) throw new NotFoundError("Secret not found");
+    if (secret.type === PLATFORM_TYPES.YOUTUBE) {
+      const youtubeService = new YouTubeService(
+        (secret.data as YouTubeSecret).clientId,
+        (secret.data as YouTubeSecret).clientSecret
+      );
+      const newTokens = youtubeService.initOAuth(true, id);
+      return newTokens;
+    }
+    // if (secret.type === PLATFORM_TYPES.INSTAGRAM) {
+    //   const instagramService = new InstagramService(
+    //     (secret.data as InstagramSecret).businessAccountId,
+    //     (secret.data as InstagramSecret).tokens
+    //   );
+    //   const newTokens = await instagramService.refresh(tokens);
+    //   secret.tokens = newTokens;
+    // }
     return secret;
   }
 

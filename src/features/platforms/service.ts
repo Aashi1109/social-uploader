@@ -39,7 +39,7 @@ class PlatformService {
     return platforms;
   }
 
-  async getById(id: string) {
+  async getById(id: string, noSafeMask = false) {
     let platform = await getPlatformCacheById(id);
 
     if (!platform) {
@@ -57,9 +57,9 @@ class PlatformService {
 
     if (!secret) throw new NotFoundError("Secret not found");
 
-    const maskedSecret = getSafeMaskedSecret(secret);
-    await setPlatformCacheById(platform.id, platform);
-    return { ...platform.toJSON(), secret: maskedSecret };
+    const maskedSecret = noSafeMask ? secret : getSafeMaskedSecret(secret);
+    if (!noSafeMask) await setPlatformCacheById(platform.id, platform);
+    return { ...platform, secret: maskedSecret };
   }
 
   async getPlatformByProjectAndName(projectId: string, name: PLATFORM_TYPES) {
@@ -92,6 +92,7 @@ class PlatformService {
         enabled: data.enabled ?? true,
         type: data.type,
         secretId: data.secretId,
+        config: this.getBaseConfig(data.type),
       });
 
       const maskedSecret = getSafeMaskedSecret(secret);
@@ -134,17 +135,14 @@ class PlatformService {
     return { success: true };
   }
 
-  async getBaseConfig(type: PLATFORM_TYPES) {
+  getBaseConfig(type: PLATFORM_TYPES) {
     if (type === PLATFORM_TYPES.INSTAGRAM) {
       const baseConfig = config.platforms.instagram;
-      return pick(baseConfig, [
-        "imagesRequirements",
-        "videoRequirements",
-      ] as const);
+      return pick(baseConfig, ["image", "video"] as const);
     }
     if (type === PLATFORM_TYPES.YOUTUBE) {
       const baseConfig = config.platforms.youtube;
-      return pick(baseConfig, ["requiredScopes"] as const);
+      return pick(baseConfig, ["video"] as const);
     }
     throw new BadRequestError(`Invalid platform type: ${type}`);
   }

@@ -15,6 +15,7 @@ import { PLATFORM_TYPES } from "@/shared/constants";
 import { getDBConnection } from "@/shared/connections";
 import { Project } from "../projects/model";
 import { Secret } from "../secrets/model";
+import { JsonSchema } from "@/shared/types/json";
 
 // Define attributes
 export interface PlatformAttributes {
@@ -45,6 +46,7 @@ export class Platform extends Model<
   declare enabled: CreationOptional<boolean>;
   declare type: PLATFORM_TYPES;
   declare secretId: ForeignKey<string>;
+  declare config: JsonSchema;
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;
 
@@ -102,6 +104,10 @@ Platform.init(
       type: DataTypes.BOOLEAN,
       allowNull: false,
       defaultValue: true,
+    },
+    config: {
+      type: DataTypes.JSONB,
+      allowNull: true,
     },
     createdAt: {
       type: DataTypes.DATE,

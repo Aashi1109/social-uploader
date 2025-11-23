@@ -18,9 +18,6 @@ import { Project } from "../projects/model";
 
 // Enums - using string literals to match database
 export type TraceStatus = "running" | "success" | "partial" | "failed";
-export type StageKind = "master" | "platform";
-export type StageStatus = "running" | "completed" | "failed";
-export type StepName = "prep" | "upload" | "publish";
 export type StepStatus = "running" | "completed" | "failed" | "skipped";
 
 // ==================== Trace Model ====================
@@ -66,15 +63,12 @@ export class Trace extends Model<
   declare updatedAt: CreationOptional<Date>;
 
   // Associations
-  declare stages?: NonAttribute<Stage[]>;
   declare steps?: NonAttribute<Step[]>;
   declare events?: NonAttribute<Event[]>;
-  declare getStages: HasManyGetAssociationsMixin<Stage>;
   declare getSteps: HasManyGetAssociationsMixin<Step>;
   declare getEvents: HasManyGetAssociationsMixin<Event>;
 
   declare static associations: {
-    stages: Association<Trace, Stage>;
     steps: Association<Trace, Step>;
     events: Association<Trace, Event>;
   };
@@ -133,193 +127,19 @@ Trace.init(
   }
 );
 
-// ==================== Stage Model ====================
-export interface StageAttributes {
-  id: string;
-  traceId: string;
-  parentStageId: string | null;
-  kind: StageKind;
-  name: string;
-  status: StageStatus;
-  progressCompleted: number;
-  progressTotal: number;
-  attempt: number;
-  attrs: JsonSchema | null;
-  startedAt: Date;
-  endedAt: Date | null;
-  durationMs: number | null;
-  error: JsonSchema | null;
-  platform: string | null;
-  order: number;
-}
-
-export interface StageCreationAttributes
-  extends Optional<
-    StageAttributes,
-    | "id"
-    | "parentStageId"
-    | "progressCompleted"
-    | "progressTotal"
-    | "attempt"
-    | "attrs"
-    | "startedAt"
-    | "endedAt"
-    | "durationMs"
-    | "error"
-    | "platform"
-    | "order"
-  > {}
-
-export class Stage extends Model<
-  InferAttributes<Stage>,
-  InferCreationAttributes<Stage>
-> {
-  declare id: CreationOptional<string>;
-  declare traceId: ForeignKey<Trace["id"]>;
-  declare parentStageId: ForeignKey<Stage["id"]> | null;
-  declare kind: StageKind;
-  declare name: string;
-  declare status: StageStatus;
-  declare progressCompleted: CreationOptional<number>;
-  declare progressTotal: CreationOptional<number>;
-  declare attempt: CreationOptional<number>;
-  declare attrs: JsonSchema | null;
-  declare startedAt: CreationOptional<Date>;
-  declare endedAt: Date | null;
-  declare durationMs: number | null;
-  declare error: JsonSchema | null;
-  declare platform: string | null;
-  declare order: CreationOptional<number>;
-
-  // Associations
-  declare trace?: NonAttribute<Trace>;
-  declare parent?: NonAttribute<Stage>;
-  declare children?: NonAttribute<Stage[]>;
-  declare steps?: NonAttribute<Step[]>;
-  declare events?: NonAttribute<Event[]>;
-  declare getTrace: BelongsToGetAssociationMixin<Trace>;
-  declare getParent: BelongsToGetAssociationMixin<Stage>;
-  declare getChildren: HasManyGetAssociationsMixin<Stage>;
-  declare getSteps: HasManyGetAssociationsMixin<Step>;
-  declare getEvents: HasManyGetAssociationsMixin<Event>;
-
-  declare static associations: {
-    trace: Association<Stage, Trace>;
-    parent: Association<Stage, Stage>;
-    children: Association<Stage, Stage>;
-    steps: Association<Stage, Step>;
-    events: Association<Stage, Event>;
-  };
-}
-
-Stage.init(
-  {
-    id: {
-      type: DataTypes.UUID,
-      primaryKey: true,
-      field: "stage_id",
-      defaultValue: Sequelize.literal("uuidv7()"),
-    },
-    traceId: {
-      type: DataTypes.UUID,
-      allowNull: false,
-      field: "trace_id",
-      references: {
-        model: Trace,
-        key: "id",
-      },
-      onDelete: "CASCADE",
-    },
-    parentStageId: {
-      type: DataTypes.UUID,
-      allowNull: true,
-      field: "parent_stage_id",
-      references: {
-        model: Stage,
-        key: "id",
-      },
-      onDelete: "CASCADE",
-    },
-    kind: {
-      type: DataTypes.ENUM("master", "platform"),
-      allowNull: false,
-    },
-    name: {
-      type: DataTypes.STRING,
-      allowNull: false,
-    },
-    status: {
-      type: DataTypes.ENUM("running", "completed", "failed"),
-      allowNull: false,
-    },
-    progressCompleted: {
-      type: DataTypes.INTEGER,
-      allowNull: false,
-      defaultValue: 0,
-      field: "progress_completed",
-    },
-    progressTotal: {
-      type: DataTypes.INTEGER,
-      allowNull: false,
-      defaultValue: 0,
-      field: "progress_total",
-    },
-    attempt: {
-      type: DataTypes.INTEGER,
-      allowNull: false,
-      defaultValue: 0,
-    },
-    attrs: {
-      type: DataTypes.JSONB,
-      allowNull: true,
-    },
-    startedAt: {
-      type: DataTypes.DATE,
-      allowNull: false,
-      defaultValue: DataTypes.NOW,
-      field: "started_at",
-    },
-    endedAt: {
-      type: DataTypes.DATE,
-      allowNull: true,
-      field: "ended_at",
-    },
-    durationMs: {
-      type: DataTypes.INTEGER,
-      allowNull: true,
-      field: "duration_ms",
-    },
-    error: {
-      type: DataTypes.JSONB,
-      allowNull: true,
-    },
-    platform: {
-      type: DataTypes.STRING,
-      allowNull: true,
-    },
-    order: {
-      type: DataTypes.INTEGER,
-      allowNull: false,
-      defaultValue: 0,
-    },
-  },
-  {
-    sequelize: getDBConnection(),
-    tableName: "stages",
-    timestamps: false,
-    underscored: true,
-    indexes: [{ fields: ["id"] }],
-    paranoid: true,
-  }
-);
-
 // ==================== Step Model ====================
+export type StepKind = "master" | "platform" | "step";
+
 export interface StepAttributes {
   id: string;
   traceId: string;
-  stageId: string;
-  name: StepName;
+  parentStepId: string | null;
+  kind: StepKind;
+  name: string;
+  platform: string | null;
   status: StepStatus;
+  attempt: number;
+  attrs: JsonSchema | null;
   startedAt: Date;
   endedAt: Date | null;
   durationMs: number | null;
@@ -333,6 +153,10 @@ export interface StepCreationAttributes
   extends Optional<
     StepAttributes,
     | "id"
+    | "parentStepId"
+    | "platform"
+    | "attempt"
+    | "attrs"
     | "startedAt"
     | "endedAt"
     | "durationMs"
@@ -348,9 +172,13 @@ export class Step extends Model<
 > {
   declare id: CreationOptional<string>;
   declare traceId: ForeignKey<Trace["id"]>;
-  declare stageId: ForeignKey<Stage["id"]>;
-  declare name: StepName;
+  declare parentStepId: ForeignKey<Step["id"]> | null;
+  declare kind: StepKind;
+  declare name: string;
+  declare platform: string | null;
   declare status: StepStatus;
+  declare attempt: CreationOptional<number>;
+  declare attrs: JsonSchema | null;
   declare startedAt: CreationOptional<Date>;
   declare endedAt: Date | null;
   declare durationMs: number | null;
@@ -361,15 +189,18 @@ export class Step extends Model<
 
   // Associations
   declare trace?: NonAttribute<Trace>;
-  declare stage?: NonAttribute<Stage>;
+  declare parent?: NonAttribute<Step>;
+  declare children?: NonAttribute<Step[]>;
   declare events?: NonAttribute<Event[]>;
   declare getTrace: BelongsToGetAssociationMixin<Trace>;
-  declare getStage: BelongsToGetAssociationMixin<Stage>;
+  declare getParent: BelongsToGetAssociationMixin<Step>;
+  declare getChildren: HasManyGetAssociationsMixin<Step>;
   declare getEvents: HasManyGetAssociationsMixin<Event>;
 
   declare static associations: {
     trace: Association<Step, Trace>;
-    stage: Association<Step, Stage>;
+    parent: Association<Step, Step>;
+    children: Association<Step, Step>;
     events: Association<Step, Event>;
   };
 }
@@ -379,7 +210,7 @@ Step.init(
     id: {
       type: DataTypes.UUID,
       primaryKey: true,
-      field: "step_id",
+      field: "id",
       defaultValue: Sequelize.literal("uuidv7()"),
     },
     traceId: {
@@ -392,23 +223,40 @@ Step.init(
       },
       onDelete: "CASCADE",
     },
-    stageId: {
+    parentStepId: {
       type: DataTypes.UUID,
-      allowNull: false,
-      field: "stage_id",
+      allowNull: true,
+      field: "parent_step_id",
       references: {
-        model: Stage,
+        model: Step,
         key: "id",
       },
       onDelete: "CASCADE",
     },
-    name: {
-      type: DataTypes.ENUM("prep", "upload", "publish"),
+    kind: {
+      type: DataTypes.ENUM("master", "platform", "step"),
       allowNull: false,
+    },
+    name: {
+      type: DataTypes.STRING,
+      allowNull: false,
+    },
+    platform: {
+      type: DataTypes.STRING,
+      allowNull: true,
     },
     status: {
       type: DataTypes.ENUM("running", "completed", "failed", "skipped"),
       allowNull: false,
+    },
+    attempt: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 0,
+    },
+    attrs: {
+      type: DataTypes.JSONB,
+      allowNull: true,
     },
     startedAt: {
       type: DataTypes.DATE,
@@ -452,7 +300,7 @@ Step.init(
     tableName: "steps",
     timestamps: true,
     underscored: true,
-    indexes: [{ fields: ["stage_id"] }, { fields: ["trace_id"] }],
+    indexes: [{ fields: ["parent_step_id"] }, { fields: ["trace_id"] }],
     paranoid: true,
   }
 );
@@ -461,7 +309,6 @@ Step.init(
 export interface EventAttributes {
   id: string;
   traceId: string;
-  stageId: string | null;
   stepId: string | null;
   name: string;
   level: string | null;
@@ -478,7 +325,6 @@ export interface EventCreationAttributes
   extends Optional<
     EventAttributes,
     | "id"
-    | "stageId"
     | "stepId"
     | "level"
     | "data"
@@ -496,7 +342,6 @@ export class Event extends Model<
 > {
   declare id: CreationOptional<string>;
   declare traceId: ForeignKey<Trace["id"]>;
-  declare stageId: ForeignKey<Stage["id"]> | null;
   declare stepId: ForeignKey<Step["id"]> | null;
   declare name: string;
   declare level: string | null;
@@ -510,15 +355,12 @@ export class Event extends Model<
 
   // Associations
   declare trace?: NonAttribute<Trace>;
-  declare stage?: NonAttribute<Stage>;
   declare stepRel?: NonAttribute<Step>;
   declare getTrace: BelongsToGetAssociationMixin<Trace>;
-  declare getStage: BelongsToGetAssociationMixin<Stage>;
   declare getStepRel: BelongsToGetAssociationMixin<Step>;
 
   declare static associations: {
     trace: Association<Event, Trace>;
-    stage: Association<Event, Stage>;
     stepRel: Association<Event, Step>;
   };
 }
@@ -537,16 +379,6 @@ Event.init(
       field: "trace_id",
       references: {
         model: Trace,
-        key: "id",
-      },
-      onDelete: "CASCADE",
-    },
-    stageId: {
-      type: DataTypes.UUID,
-      allowNull: true,
-      field: "stage_id",
-      references: {
-        model: Stage,
         key: "id",
       },
       onDelete: "CASCADE",
@@ -614,11 +446,6 @@ Event.init(
 // ==================== Define All Associations ====================
 
 // Trace associations
-Trace.hasMany(Stage, {
-  foreignKey: "traceId",
-  as: "stages",
-  onDelete: "CASCADE",
-});
 Trace.hasMany(Step, {
   foreignKey: "traceId",
   as: "steps",
@@ -630,37 +457,19 @@ Trace.hasMany(Event, {
   onDelete: "CASCADE",
 });
 
-// Stage associations
-Stage.belongsTo(Trace, {
-  foreignKey: "traceId",
-  as: "trace",
-});
-Stage.belongsTo(Stage, {
-  foreignKey: "parentStageId",
-  as: "parent",
-});
-Stage.hasMany(Stage, {
-  foreignKey: "parentStageId",
-  as: "children",
-});
-Stage.hasMany(Step, {
-  foreignKey: "stageId",
-  as: "steps",
-  onDelete: "CASCADE",
-});
-Stage.hasMany(Event, {
-  foreignKey: "stageId",
-  as: "events",
-});
-
 // Step associations
 Step.belongsTo(Trace, {
   foreignKey: "traceId",
   as: "trace",
 });
-Step.belongsTo(Stage, {
-  foreignKey: "stageId",
-  as: "stage",
+Step.belongsTo(Step, {
+  foreignKey: "parentStepId",
+  as: "parent",
+});
+Step.hasMany(Step, {
+  foreignKey: "parentStepId",
+  as: "children",
+  onDelete: "CASCADE",
 });
 Step.hasMany(Event, {
   foreignKey: "stepId",
@@ -672,10 +481,6 @@ Event.belongsTo(Trace, {
   foreignKey: "traceId",
   as: "trace",
 });
-Event.belongsTo(Stage, {
-  foreignKey: "stageId",
-  as: "stage",
-});
 Event.belongsTo(Step, {
   foreignKey: "stepId",
   as: "stepRel",
@@ -683,7 +488,6 @@ Event.belongsTo(Step, {
 
 (async () => {
   await Trace.sync({});
-  await Stage.sync({});
   await Step.sync({});
   await Event.sync({});
 })();

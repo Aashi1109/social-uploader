@@ -5,14 +5,26 @@ import {
 } from "@/core/queues";
 import { Tracer } from "@/features/tracing/service";
 import type { PublishJobData } from "@/shared/types/publish";
-import { PLATFORM_TYPES, STEP_NAMES, EventName } from "@/shared/constants";
+import {
+  PLATFORM_TYPES,
+  STEP_NAMES,
+  EventName,
+  getPlatformQueueName,
+} from "@/shared/constants";
 import { BadRequestError } from "@/shared/exceptions";
+import { logger } from "@/core/logger";
 
 export default function InstagramWorker() {
-  createWorker("publish", async (job) => {
+  const queueName = getPlatformQueueName(PLATFORM_TYPES.INSTAGRAM);
+
+  logger.info({ queueName }, "📸 Instagram Worker initialized");
+
+  createWorker(queueName, async (job) => {
     const data = job.data as unknown as PublishJobData;
-    if (data.platform !== PLATFORM_TYPES.INSTAGRAM)
-      throw new BadRequestError("Invalid platform");
+    logger.info(
+      { jobId: job.id, platform: data.platform },
+      "Instagram worker processing job"
+    );
 
     const trace = Tracer.fromExisting(
       data.projectId,
@@ -32,16 +44,23 @@ export default function InstagramWorker() {
         step: STEP_NAMES.prep,
       });
 
-      const prep = await mediaPrepQueue.add("prep", {
-        traceId: trace.traceId,
+      const prepJob = await mediaPrepQueue.add("prep", {
+        traceId: data.traceId,
+        requestId: data.requestId,
         projectId: data.projectId,
         platform: PLATFORM_TYPES.INSTAGRAM,
         mediaUrl: data.mediaUrl,
+        filePath: data.filePath,
       });
-      await prep.waitUntilFinished(mediaPrepQueueEvents);
+      const prepResult = (await prepJob.waitUntilFinished(
+        mediaPrepQueueEvents
+      )) as { filePath: string; converted: boolean };
+      const preparedFilePath = prepResult?.filePath || data.filePath;
 
       platformSpan.event("INFO", EventName.PREP_DONE, {
         step: STEP_NAMES.prep,
+        filePath: preparedFilePath,
+        converted: prepResult?.converted,
       });
 
       // Upload step
