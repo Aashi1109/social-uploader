@@ -17,6 +17,16 @@ const youTubeOAuthInitSchema = {
     clientId: { type: "string", minLength: 1 },
     clientSecret: { type: "string", minLength: 1 },
     channelId: { type: "string", minLength: 1, nullable: true },
+    config: {
+      type: "object",
+      additionalProperties: false,
+      required: ["uploadType"],
+      properties: {
+        uploadType: {
+          type: "string",
+        },
+      },
+    },
   },
 } as const;
 

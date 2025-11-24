@@ -67,6 +67,7 @@ export default function YoutubeWorker() {
         requestId: data.requestId,
         projectId: data.projectId,
         platform: PLATFORM_TYPES.YOUTUBE,
+        platformId,
         mediaUrl: data.mediaUrl,
         filePath: data.filePath,
       });

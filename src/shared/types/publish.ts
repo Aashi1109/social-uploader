@@ -1,6 +1,5 @@
+import { PLATFORM_TYPES } from "../constants";
 import { JsonSchema } from "./json";
-
-export type PlatformName = "instagram" | "youtube";
 
 export interface MasterJobData {
   requestId: string;
@@ -13,7 +12,7 @@ export interface MasterJobData {
 export interface PublishJobData extends JsonSchema {
   requestId: string;
   projectId: string;
-  platform: PlatformName;
+  platformId: string;
   mediaUrl: string;
   title?: string;
   description?: string;

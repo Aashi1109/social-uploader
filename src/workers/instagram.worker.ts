@@ -22,7 +22,7 @@ export default function InstagramWorker() {
   createWorker(queueName, async (job) => {
     const data = job.data as unknown as PublishJobData;
     logger.info(
-      { jobId: job.id, platform: data.platform },
+      { jobId: job.id, platform: data.platformType },
       "Instagram worker processing job"
     );
 

@@ -107,7 +107,7 @@ Platform.init(
     },
     config: {
       type: DataTypes.JSONB,
-      allowNull: true,
+      allowNull: false,
     },
     createdAt: {
       type: DataTypes.DATE,

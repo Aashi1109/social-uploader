@@ -11,6 +11,8 @@ import type { FfprobeData } from "fluent-ffmpeg";
 import ffmpegPath from "ffmpeg-static";
 import ffprobePath from "ffprobe-static";
 import sharp from "sharp";
+import { JsonSchema } from "@/shared/types/json";
+import { isEmpty } from "@/shared/utils";
 
 // Configure fluent-ffmpeg to use bundled binaries (no system dependencies)
 if (ffmpegPath) {
@@ -56,30 +58,52 @@ interface MediaPrepResult {
   converted: boolean;
 }
 
+enum UploadTypes {
+  ShortVideos = "short-videos",
+  LongVideos = "long-videos",
+  Image = "image",
+}
+
+const getMediaUploadConfig = (
+  platformType: PLATFORM_TYPES,
+  config: JsonSchema
+) => {
+  switch (platformType) {
+    case PLATFORM_TYPES.INSTAGRAM:
+      return "image";
+    case PLATFORM_TYPES.YOUTUBE: {
+      const uploadType = config.uploadType;
+      const uploadConfig = config[uploadType];
+
+      if (isEmpty(uploadConfig)) throw new Error(`Upload config missing`);
+      return uploadConfig;
+    }
+    default:
+      throw new Error("Invalid platform type");
+  }
+};
+
 export default function MediaPrepWorker() {
   createWorker<PublishJobData, MediaPrepResult>("media-prep", async (job) => {
-    const { filePath, projectId, platform, traceId } = job.data;
+    const { filePath, projectId, traceId, platformId } = job.data;
 
     // Validate required fields
-    if (!filePath) throw new Error("filePath is required");
-    if (!traceId) throw new Error("traceId is required");
-    if (!platform) throw new Error("platform is required");
+    if (!filePath || !traceId || !platformId)
+      throw new Error("Invalid job data");
 
     // This worker is called within a parent stage context.
     // The parent worker (Instagram/YouTube) already tracks the prep step,
     // so we just do the work here without emitting duplicate events.
 
-    logger.info(
-      { traceId, projectId, platform, filePath },
-      "Media prep started"
-    );
+    logger.info({ traceId, projectId, filePath }, "Media prep started");
 
     try {
       // Get platform-specific media requirements
       const platformService = new PlatformService();
-      const requirements = await platformService.getBaseConfig(
-        platform as PLATFORM_TYPES
-      );
+      const { config, type } = await platformService.getById(platformId, true);
+
+      const uploadType = config.uploadType;
+      const requirements = config.requirements;
 
       // Detect media type
       const mediaType = detectMediaType(filePath);
@@ -96,12 +120,12 @@ export default function MediaPrepWorker() {
       const conversionNeeds = analyzeConversionNeeds(
         mediaInfo,
         requirements,
-        platform as PLATFORM_TYPES
+        type
       );
 
       if (!conversionNeeds.needsConversion) {
         logger.info(
-          { traceId, platform, mediaType },
+          { traceId, platformId, mediaType },
           "Media meets requirements, no conversion needed"
         );
         return { filePath, converted: false };
@@ -109,7 +133,7 @@ export default function MediaPrepWorker() {
 
       // Convert the media
       logger.info(
-        { traceId, platform, mediaType, reasons: conversionNeeds.reasons },
+        { traceId, platformId, mediaType, reasons: conversionNeeds.reasons },
         "Media conversion required"
       );
 

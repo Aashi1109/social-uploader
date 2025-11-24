@@ -7,13 +7,11 @@ export const createPublishSchema = {
   type: "object",
   required: ["type"],
   properties: {
-    mediaUrl: { type: "string", nullable: true },
-    title: { type: "string", nullable: true },
+    mediaUrl: { type: "string", nullable: false },
+    title: { type: "string", nullable: false },
     description: { type: "string", nullable: true },
-    fileData: { type: "string", nullable: true },
     type: { type: "string", enum: ["video", "image"] },
   },
-  anyOf: [{ required: ["mediaUrl"] }, { required: ["fileData"] }],
   additionalProperties: false,
 } as JSONSchemaType<IPublishRequest>;
 
