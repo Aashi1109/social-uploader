@@ -13,6 +13,11 @@ import ffprobePath from "ffprobe-static";
 import sharp from "sharp";
 import { JsonSchema } from "@/shared/types/json";
 import { isEmpty } from "@/shared/utils";
+import {
+  validateMediaConstraints,
+  MediaInfo,
+  MediaRequirements,
+} from "./validation-utils";
 
 // Configure fluent-ffmpeg to use bundled binaries (no system dependencies)
 if (ffmpegPath) {
@@ -23,35 +28,6 @@ if (ffprobePath?.path) {
 }
 
 type MediaType = "image" | "video";
-
-interface MediaInfo {
-  type: MediaType;
-  duration?: number;
-  width?: number;
-  height?: number;
-  aspectRatio?: number;
-  codec?: string;
-  audioCodec?: string;
-  frameRate?: number;
-  bitrate?: number;
-  fileSize?: number;
-  format?: string;
-}
-
-interface ConversionNeeds {
-  needsConversion: boolean;
-  reasons: string[];
-  targetSpecs?: {
-    width?: number;
-    height?: number;
-    aspectRatio?: string;
-    videoCodec?: string;
-    audioCodec?: string;
-    maxDuration?: number;
-    format?: string;
-    quality?: number;
-  };
-}
 
 interface MediaPrepResult {
   filePath: string;
@@ -103,7 +79,10 @@ export default function MediaPrepWorker() {
       const { config, type } = await platformService.getById(platformId, true);
 
       const uploadType = config.uploadType;
-      const requirements = config.requirements;
+      const requirements = config.requirements as MediaRequirements;
+
+      // Get enforceConstraints setting (default to false for auto-format mode)
+      const enforceConstraints = config.enforceConstraints === true;
 
       // Detect media type
       const mediaType = detectMediaType(filePath);
@@ -116,14 +95,45 @@ export default function MediaPrepWorker() {
           : await inspectVideo(filePath);
       logger.debug({ traceId, mediaInfo }, "Media inspection complete");
 
-      // Check if conversion is needed
-      const conversionNeeds = analyzeConversionNeeds(
+      // Validate media against platform requirements
+      // This will throw an error if enforceConstraints=true and media doesn't meet requirements
+      const validationResult = validateMediaConstraints(
         mediaInfo,
         requirements,
-        type
+        type,
+        enforceConstraints
       );
 
-      if (!conversionNeeds.needsConversion) {
+      logger.debug(
+        {
+          traceId,
+          validationResult: {
+            isValid: validationResult.isValid,
+            requiresConversion: validationResult.requiresConversion,
+            issueCount: validationResult.issues.length,
+          },
+        },
+        "Media validation complete"
+      );
+
+      // Log validation issues
+      if (validationResult.issues.length > 0) {
+        validationResult.issues.forEach((issue) => {
+          const logLevel = issue.severity === "error" ? "warn" : "debug";
+          logger[logLevel](
+            {
+              traceId,
+              field: issue.field,
+              actual: issue.actual,
+              expected: issue.expected,
+            },
+            issue.message
+          );
+        });
+      }
+
+      // If no conversion is needed, return original file
+      if (!validationResult.requiresConversion) {
         logger.info(
           { traceId, platformId, mediaType },
           "Media meets requirements, no conversion needed"
@@ -131,16 +141,27 @@ export default function MediaPrepWorker() {
         return { filePath, converted: false };
       }
 
-      // Convert the media
+      // Convert the media to meet platform requirements
       logger.info(
-        { traceId, platformId, mediaType, reasons: conversionNeeds.reasons },
+        {
+          traceId,
+          platformId,
+          mediaType,
+          issueCount: validationResult.issues.filter(
+            (i) => i.severity === "error"
+          ).length,
+        },
         "Media conversion required"
       );
 
       const convertedPath =
         mediaInfo.type === "image"
-          ? await convertImage(filePath, conversionNeeds.targetSpecs!, traceId)
-          : await convertVideo(filePath, conversionNeeds.targetSpecs!, traceId);
+          ? await convertImage(filePath, validationResult.targetSpecs!, traceId)
+          : await convertVideo(
+              filePath,
+              validationResult.targetSpecs!,
+              traceId
+            );
 
       logger.info({ traceId, convertedPath }, "Media conversion complete");
 
@@ -269,214 +290,22 @@ async function inspectVideo(filePath: string): Promise<MediaInfo> {
 }
 
 /**
- * Analyze if media needs conversion based on platform requirements
- */
-function analyzeConversionNeeds(
-  mediaInfo: MediaInfo,
-  requirements: any,
-  platform: PLATFORM_TYPES
-): ConversionNeeds {
-  const reasons: string[] = [];
-  const result: ConversionNeeds = {
-    needsConversion: false,
-    reasons,
-    targetSpecs: {},
-  };
-
-  if (platform === PLATFORM_TYPES.INSTAGRAM) {
-    // Handle images
-    if (mediaInfo.type === "image") {
-      const imageReq = requirements.imagesRequirements;
-      if (!imageReq) return result;
-
-      // Check aspect ratio
-      if (mediaInfo.aspectRatio) {
-        const minAspectRatio = imageReq.minAspectRatio
-          ? parseFloat(imageReq.minAspectRatio)
-          : 0.8;
-        const maxAspectRatio = imageReq.maxAspectRatio
-          ? parseFloat(imageReq.maxAspectRatio)
-          : 1.91;
-
-        if (
-          mediaInfo.aspectRatio < minAspectRatio ||
-          mediaInfo.aspectRatio > maxAspectRatio
-        ) {
-          reasons.push(
-            `Aspect ratio ${mediaInfo.aspectRatio.toFixed(2)} outside range ${minAspectRatio}-${maxAspectRatio}`
-          );
-          // Fit to 1:1 (1080x1080) as safe default
-          result.targetSpecs!.width = 1080;
-          result.targetSpecs!.height = 1080;
-        }
-      }
-
-      // Check format
-      const acceptedFormats = imageReq.formats || ["jpeg", "jpg", "png"];
-      if (mediaInfo.format && !acceptedFormats.includes(mediaInfo.format)) {
-        reasons.push(`Format ${mediaInfo.format} not in accepted list`);
-        result.targetSpecs!.format = "jpeg";
-      }
-
-      // Check file size
-      const maxSizeBytes = (imageReq.maxFileSizeMB || 8) * 1024 * 1024;
-      if (mediaInfo.fileSize && mediaInfo.fileSize > maxSizeBytes) {
-        reasons.push(
-          `File size ${(mediaInfo.fileSize / 1024 / 1024).toFixed(2)}MB exceeds max ${imageReq.maxFileSizeMB || 8}MB`
-        );
-        result.targetSpecs!.quality = 85; // Compress
-      }
-
-      result.needsConversion = reasons.length > 0;
-      return result;
-    }
-
-    // Handle videos
-    const videoReq = requirements.videoRequirements;
-    if (!videoReq) return result;
-
-    // Check video codec
-    if (
-      videoReq.videoCodecs &&
-      !videoReq.videoCodecs.includes(mediaInfo.codec)
-    ) {
-      reasons.push(`Video codec ${mediaInfo.codec} not supported`);
-      result.targetSpecs!.videoCodec = videoReq.videoCodecs[0];
-    }
-
-    // Check audio codec
-    if (
-      videoReq.audioCodecs &&
-      !videoReq.audioCodecs.includes(mediaInfo.audioCodec)
-    ) {
-      reasons.push(`Audio codec ${mediaInfo.audioCodec} not supported`);
-      result.targetSpecs!.audioCodec = videoReq.audioCodecs[0];
-    }
-
-    // Check width
-    if (
-      videoReq.maxWidth &&
-      mediaInfo.width &&
-      mediaInfo.width > videoReq.maxWidth
-    ) {
-      reasons.push(`Width ${mediaInfo.width} exceeds max ${videoReq.maxWidth}`);
-      result.targetSpecs!.width = videoReq.maxWidth;
-      // Calculate height to maintain aspect ratio
-      if (mediaInfo.aspectRatio) {
-        result.targetSpecs!.height = Math.round(
-          videoReq.maxWidth / mediaInfo.aspectRatio
-        );
-      }
-    }
-
-    // Check duration
-    if (
-      videoReq.maxDurationSeconds &&
-      mediaInfo.duration &&
-      mediaInfo.duration > videoReq.maxDurationSeconds
-    ) {
-      reasons.push(
-        `Duration ${mediaInfo.duration}s exceeds max ${videoReq.maxDurationSeconds}s`
-      );
-      result.targetSpecs!.maxDuration = videoReq.maxDurationSeconds;
-    }
-
-    // Check aspect ratio (Instagram Reels is 9:16)
-    if (videoReq.aspectRatio && mediaInfo.aspectRatio) {
-      const targetAspectRatio = eval(videoReq.aspectRatio); // e.g., "9/16"
-      const tolerance = 0.05; // 5% tolerance
-      if (Math.abs(mediaInfo.aspectRatio - targetAspectRatio) > tolerance) {
-        reasons.push(
-          `Aspect ratio ${mediaInfo.aspectRatio.toFixed(2)} does not match ${videoReq.aspectRatio}`
-        );
-        result.targetSpecs!.aspectRatio = videoReq.aspectRatio;
-      }
-    }
-
-    // Check file size
-    const maxSizeBytes = videoReq.maxFileSizeMB * 1024 * 1024;
-    if (mediaInfo.fileSize && mediaInfo.fileSize > maxSizeBytes) {
-      reasons.push(
-        `File size ${(mediaInfo.fileSize / 1024 / 1024).toFixed(2)}MB exceeds max ${videoReq.maxFileSizeMB}MB`
-      );
-    }
-  } else if (platform === PLATFORM_TYPES.YOUTUBE) {
-    // YouTube primarily supports videos, but thumbnails are images
-    if (mediaInfo.type === "image") {
-      // For YouTube thumbnails (if applicable)
-      const imageReq = requirements.imagesRequirements;
-      if (imageReq) {
-        // YouTube thumbnail: 1280x720 recommended
-        if (
-          mediaInfo.width &&
-          mediaInfo.height &&
-          (mediaInfo.width < 1280 || mediaInfo.height < 720)
-        ) {
-          reasons.push(
-            `Image dimensions ${mediaInfo.width}x${mediaInfo.height} below recommended 1280x720`
-          );
-          result.targetSpecs!.width = 1280;
-          result.targetSpecs!.height = 720;
-        }
-
-        // Check format
-        const acceptedFormats = ["jpeg", "jpg", "png"];
-        if (mediaInfo.format && !acceptedFormats.includes(mediaInfo.format)) {
-          reasons.push(`Format ${mediaInfo.format} not optimal for YouTube`);
-          result.targetSpecs!.format = "jpeg";
-        }
-      }
-      result.needsConversion = reasons.length > 0;
-      return result;
-    }
-
-    // YouTube video requirements are more lenient
-    const videoReq = requirements.videoRequirements;
-    if (!videoReq) return result;
-
-    // YouTube accepts H.264 and others, but we'll standardize to H.264 if needed
-    const acceptedCodecs = ["h264", "hevc", "vp9"];
-    if (mediaInfo.codec && !acceptedCodecs.includes(mediaInfo.codec)) {
-      reasons.push(`Video codec ${mediaInfo.codec} not optimal for YouTube`);
-      result.targetSpecs!.videoCodec = "h264";
-    }
-
-    // YouTube prefers AAC audio
-    const acceptedAudioCodecs = ["aac", "mp3", "vorbis", "opus"];
-    if (
-      mediaInfo.audioCodec &&
-      !acceptedAudioCodecs.includes(mediaInfo.audioCodec)
-    ) {
-      reasons.push(
-        `Audio codec ${mediaInfo.audioCodec} not optimal for YouTube`
-      );
-      result.targetSpecs!.audioCodec = "aac";
-    }
-
-    // Check max duration if configured
-    if (
-      videoReq.maxDurationSeconds &&
-      mediaInfo.duration &&
-      mediaInfo.duration > videoReq.maxDurationSeconds
-    ) {
-      reasons.push(
-        `Duration ${mediaInfo.duration}s exceeds max ${videoReq.maxDurationSeconds}s`
-      );
-      result.targetSpecs!.maxDuration = videoReq.maxDurationSeconds;
-    }
-  }
-
-  result.needsConversion = reasons.length > 0;
-  return result;
-}
-
-/**
  * Convert image using sharp
  * Creates a new file in request folder, preserving the original
  */
 async function convertImage(
   inputPath: string,
-  targetSpecs: NonNullable<ConversionNeeds["targetSpecs"]>,
+  targetSpecs: {
+    width?: number;
+    height?: number;
+    aspectRatio?: string;
+    videoCodec?: string;
+    audioCodec?: string;
+    maxDuration?: number;
+    format?: string;
+    quality?: number;
+    frameRate?: number;
+  },
   traceId: string
 ): Promise<string> {
   const tmpDir = config.tmpDir;
@@ -543,7 +372,17 @@ async function convertImage(
  */
 async function convertVideo(
   inputPath: string,
-  targetSpecs: NonNullable<ConversionNeeds["targetSpecs"]>,
+  targetSpecs: {
+    width?: number;
+    height?: number;
+    aspectRatio?: string;
+    videoCodec?: string;
+    audioCodec?: string;
+    maxDuration?: number;
+    format?: string;
+    quality?: number;
+    frameRate?: number;
+  },
   traceId: string
 ): Promise<string> {
   const tmpDir = config.tmpDir;
@@ -582,6 +421,11 @@ async function convertVideo(
       command = command.audioCodec("copy");
     }
 
+    // Frame rate
+    if (targetSpecs.frameRate) {
+      command = command.fps(targetSpecs.frameRate);
+    }
+
     // Resolution
     if (targetSpecs.width && targetSpecs.height) {
       // Ensure dimensions are divisible by 2 (required by many codecs)
@@ -590,19 +434,25 @@ async function convertVideo(
       command = command.size(`${w}x${h}`);
     } else if (targetSpecs.aspectRatio) {
       // Adjust to target aspect ratio (pad or crop)
-      // For Instagram Reels: 9:16 aspect ratio (1080x1920)
-      const [arWidth, arHeight] = targetSpecs.aspectRatio
-        .split("/")
-        .map(Number);
-      if (arWidth && arHeight) {
-        const targetWidth = 1080;
-        const targetHeight = Math.round((targetWidth * arHeight) / arWidth);
-        command = command.videoFilters([
-          `scale=-2:${targetHeight}`,
-          `setsar=1`,
-          `pad=${targetWidth}:${targetHeight}:(ow-iw)/2:(oh-ih)/2`,
-        ]);
+      // Parse aspect ratio (can be string like "0.5625" or "9/16")
+      let targetAspectRatio: number;
+      if (targetSpecs.aspectRatio.includes("/")) {
+        const [arWidth, arHeight] = targetSpecs.aspectRatio
+          .split("/")
+          .map(Number);
+        targetAspectRatio = arWidth / arHeight;
+      } else {
+        targetAspectRatio = parseFloat(targetSpecs.aspectRatio);
       }
+
+      // Use standard dimensions based on aspect ratio
+      const targetWidth = 1080;
+      const targetHeight = Math.round(targetWidth / targetAspectRatio);
+      command = command.videoFilters([
+        `scale=-2:${targetHeight}`,
+        `setsar=1`,
+        `pad=${targetWidth}:${targetHeight}:(ow-iw)/2:(oh-ih)/2`,
+      ]);
     }
 
     // Duration limit

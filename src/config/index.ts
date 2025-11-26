@@ -63,23 +63,6 @@ const config = {
     youtube: {
       requiredScopes: process.env.YOUTUBE_REQUIRED_SCOPES?.split(","),
       redirectUri: process.env.YOUTUBE_REDIRECT_URI,
-      video: {
-        formats: process.env.YOUTUBE_VIDEO_FORMATS?.split(",") || [
-          "mp4",
-          "mov",
-        ],
-        audioCodecs: process.env.YOUTUBE_AUDIO_CODECS?.split(",") || [
-          "aac",
-          "mp3",
-          "opus",
-        ],
-        videoCodecs: process.env.YOUTUBE_VIDEO_CODECS?.split(",") || ["h264"],
-        maxWidth: Number(process.env.YOUTUBE_MAX_WIDTH) || 1080, // 1080x1920 Shorts
-        maxHeight: Number(process.env.YOUTUBE_MAX_HEIGHT) || 1920,
-        maxFileSizeMB: Number(process.env.YOUTUBE_MAX_FILE_SIZE_MB) || 2048, // 2GB more realistic for Shorts
-        maxDurationSeconds:
-          Number(process.env.YOUTUBE_MAX_DURATION_SECONDS) || 60, // Shorts limit
-      },
     },
   },
 };

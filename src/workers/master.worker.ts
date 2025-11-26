@@ -195,6 +195,7 @@ export default function MasterWorker() {
       }
 
       masterSpan.end("SUCCESS");
+      trace.end("SUCCESS");
       return true;
     } catch (error) {
       masterSpan.event("ERROR", "file.download.failed", {
@@ -203,6 +204,7 @@ export default function MasterWorker() {
       masterSpan.end("FAILED", {
         message: error instanceof Error ? error.message : String(error),
       });
+      trace.end("FAILED");
       return false;
     }
   });

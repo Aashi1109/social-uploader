@@ -1,5 +1,5 @@
 import { CACHE_NAMESPACE_CONFIG } from "@/shared/constants";
-import { RedisCache } from "../cache";
+import { RedisCache } from "../../shared/cache";
 import { Platform } from "./model";
 
 const redisCache = new RedisCache({

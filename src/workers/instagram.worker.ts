@@ -11,7 +11,6 @@ import {
   EventName,
   getPlatformQueueName,
 } from "@/shared/constants";
-import { BadRequestError } from "@/shared/exceptions";
 import { logger } from "@/core/logger";
 
 export default function InstagramWorker() {

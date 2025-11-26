@@ -1,5 +1,5 @@
 import { CACHE_NAMESPACE_CONFIG } from "@/shared/constants";
-import { RedisCache } from "../cache";
+import { RedisCache } from "../../shared/cache";
 
 const pendingSecretCache = new RedisCache({
   namespace: CACHE_NAMESPACE_CONFIG.PendingSecrets.namespace,

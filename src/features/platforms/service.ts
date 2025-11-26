@@ -2,7 +2,7 @@ import { Platform } from "./model";
 import { NotFoundError, BadRequestError } from "@/shared/exceptions";
 import { PLATFORM_TYPES } from "@/shared/constants";
 import config from "@/config";
-import { pick } from "@/shared/utils";
+import { isEmpty, pick } from "@/shared/utils";
 import SecretsService from "../secrets/service";
 import {
   deletePlatformCacheById,
@@ -10,17 +10,28 @@ import {
   setPlatformCacheById,
 } from "./helper";
 import { getSafeMaskedSecret } from "../secrets/utils";
-import { JsonSchema } from "@/shared/types/json";
+import {
+  YOUTUBE_UPLOAD_DEFAULTS,
+  YOUTUBE_PUBLISH_TYPES,
+  YOUTUBE_VISIBILITY,
+} from "./youtube/constants";
+import {
+  INSTAGRAM_PUBLISH_TYPES,
+  INSTAGRAM_UPLOAD_DEFAULTS,
+  INSTAGRAM_VISIBILITY,
+} from "./instagram/constants";
 
-export interface PlatformConfig extends JsonSchema {
-  mediaProfile?: JsonSchema;
-  mapping?: JsonSchema;
-  limits?: JsonSchema;
-  maxDurationSeconds?: number;
-  minAspectRatio?: number;
-  maxAspectRatio?: number;
-  maxFileSizeMB?: number;
-}
+export type PlatformConfig =
+  | {
+      uploadType: (typeof YOUTUBE_PUBLISH_TYPES)[keyof typeof YOUTUBE_PUBLISH_TYPES];
+      visibility: (typeof YOUTUBE_VISIBILITY)[keyof typeof YOUTUBE_VISIBILITY];
+      enforceConstraints?: boolean; // If true, throw error on constraint violation; if false (default), auto-format media
+    }
+  | {
+      uploadType: (typeof INSTAGRAM_PUBLISH_TYPES)[keyof typeof INSTAGRAM_PUBLISH_TYPES];
+      visibility: (typeof INSTAGRAM_VISIBILITY)[keyof typeof INSTAGRAM_VISIBILITY];
+      enforceConstraints?: boolean; // If true, throw error on constraint violation; if false (default), auto-format media
+    };
 
 class PlatformService {
   #secretService: SecretsService;
@@ -82,6 +93,7 @@ class PlatformService {
     type: PLATFORM_TYPES;
     enabled?: boolean;
     secretId: string;
+    config: PlatformConfig;
   }) {
     try {
       const secret = await this.#secretService.getById(data.secretId);
@@ -92,7 +104,7 @@ class PlatformService {
         enabled: data.enabled ?? true,
         type: data.type,
         secretId: data.secretId,
-        config: this.getBaseConfig(data.type),
+        config: this.getBaseConfig(data.type, data.config),
       });
 
       const maskedSecret = getSafeMaskedSecret(secret);
@@ -120,6 +132,9 @@ class PlatformService {
     if (!platform) throw new NotFoundError("Platform not found");
 
     platform.enabled = data.enabled ?? platform.enabled;
+    if (!isEmpty(data.config)) {
+      platform.config = this.getBaseConfig(platform.type, data.config!);
+    }
     await platform.save();
 
     await deletePlatformCacheById(platform.id);
@@ -135,16 +150,30 @@ class PlatformService {
     return { success: true };
   }
 
-  getBaseConfig(type: PLATFORM_TYPES) {
-    if (type === PLATFORM_TYPES.INSTAGRAM) {
-      const baseConfig = config.platforms.instagram;
-      return pick(baseConfig, ["image", "video"] as const);
+  getBaseConfig(type: PLATFORM_TYPES, config: PlatformConfig) {
+    const { uploadType, visibility, enforceConstraints } = config;
+
+    let configObject;
+
+    switch (type) {
+      case PLATFORM_TYPES.INSTAGRAM:
+        configObject = INSTAGRAM_UPLOAD_DEFAULTS;
+        break;
+      case PLATFORM_TYPES.YOUTUBE:
+        configObject = YOUTUBE_UPLOAD_DEFAULTS;
+        break;
+      default:
+        throw new BadRequestError(`Invalid platform type: ${type}`);
     }
-    if (type === PLATFORM_TYPES.YOUTUBE) {
-      const baseConfig = config.platforms.youtube;
-      return pick(baseConfig, ["video"] as const);
-    }
-    throw new BadRequestError(`Invalid platform type: ${type}`);
+
+    const _config = {
+      ...((configObject as any)[uploadType] || {}),
+      visibility,
+      // enforceConstraints: if true, throw error on constraint violation; if false (default), auto-format media
+      enforceConstraints: enforceConstraints ?? false,
+    };
+
+    return _config;
   }
 }
 

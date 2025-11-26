@@ -1,10 +1,16 @@
 import ajv from "@/shared/ajv";
+import { YOUTUBE_PUBLISH_TYPES, YOUTUBE_VISIBILITY } from "./constants";
 
 export type YouTubeOAuthInitInput = {
   scope: string;
   clientId: string;
   clientSecret: string;
   channelId?: string;
+};
+
+export type YoutubeUploadConfig = {
+  uploadType: string;
+  category?: string;
 };
 
 const youTubeOAuthInitSchema = {
@@ -24,12 +30,16 @@ const youTubeOAuthInitSchema = {
       properties: {
         uploadType: {
           type: "string",
+          enum: Object.values(YOUTUBE_PUBLISH_TYPES),
+        },
+        category: { type: "string", minLength: 1, nullable: true },
+        visibility: {
+          type: "string",
+          enum: Object.values(YOUTUBE_VISIBILITY),
         },
       },
     },
   },
 } as const;
 
-export const validateYouTubeOAuthInit = ajv.compile(
-  youTubeOAuthInitSchema as any
-);
+export const validateYouTubeOAuthInit = ajv.compile(youTubeOAuthInitSchema);

@@ -1,6 +1,7 @@
 import { getUUIDv7 } from "@/shared/utils/ids";
 import { Trace as TraceModel, Step, Event as EventModel } from "./models";
 import { logger } from "@/core/logger";
+import { getDBConnection } from "@/shared/connections";
 
 type TraceStatus =
   | "RUNNING"
@@ -130,17 +131,35 @@ class BatchIngestor<T> {
   private queue: T[] = [];
   private timer: NodeJS.Timeout | null = null;
   private inflight = 0;
+  private preFlushFn?: () => Promise<void>;
 
-  constructor(private readonly postFn: (batch: T[]) => Promise<void>) {}
+  constructor(
+    private readonly postFn: (batch: T[]) => Promise<void>,
+    preFlush?: () => Promise<void>
+  ) {
+    this.preFlushFn = preFlush;
+  }
 
   enqueue(item: T) {
     this.queue.push(item);
-    if (this.queue.length >= CFG.BATCH_MAX) this.flush();
-    else this.arm();
+    if (this.queue.length >= CFG.BATCH_MAX) {
+      // Clear timer since we're flushing immediately
+      this.clearTimer();
+      this.flush();
+    } else {
+      this.arm();
+    }
+  }
+
+  private clearTimer() {
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
   }
 
   private arm() {
-    if (this.timer) return;
+    if (this.timer) return; // Timer already armed
     this.timer = setTimeout(() => {
       this.timer = null;
       this.flush();
@@ -148,18 +167,46 @@ class BatchIngestor<T> {
   }
 
   async flush() {
-    if (!this.queue.length) return;
-    if (this.inflight >= CFG.MAX_INFLIGHT) return; // simple backpressure
+    if (!this.queue.length) {
+      this.clearTimer(); // Clear timer if queue is empty
+      return;
+    }
+
+    // Clear any existing timer since we're flushing now
+    this.clearTimer();
+
+    if (this.inflight >= CFG.MAX_INFLIGHT) {
+      // If we're at max inflight, wait a bit and retry
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      if (this.inflight >= CFG.MAX_INFLIGHT) {
+        // Re-arm timer since we couldn't flush
+        this.arm();
+        return;
+      }
+    }
+
+    // Run pre-flush if defined (e.g., flush traces before steps)
+    if (this.preFlushFn) {
+      await this.preFlushFn();
+    }
+
     const take = this.queue.splice(0, CFG.BATCH_MAX);
     this.inflight++;
     try {
       await this.postFn(take);
     } catch (e) {
+      logger.error(
+        { err: e, queueLength: this.queue.length },
+        "Batch ingestor flush failed"
+      );
       // On failure, push back to the front (bounded retry would be nicer)
       this.queue = take.concat(this.queue);
     } finally {
       this.inflight--;
-      if (this.queue.length) this.arm();
+      // Re-arm timer if there are still items in the queue
+      if (this.queue.length) {
+        this.arm();
+      }
     }
   }
 }
@@ -168,7 +215,12 @@ class BatchIngestor<T> {
 const TRACE_INGESTOR = new BatchIngestor<TraceRecord>(async (batch) => {
   const now = new Date();
   const tracesToUpsert: any[] = [];
-  const traceIdsToUpdate: string[] = [];
+  const traceUpdates: Array<{
+    traceId: string;
+    status?: TraceStatus;
+    endedAt?: ISODate;
+    durationMs?: number;
+  }> = [];
 
   for (const record of batch) {
     if (record._t === "trace_start") {
@@ -181,7 +233,12 @@ const TRACE_INGESTOR = new BatchIngestor<TraceRecord>(async (batch) => {
         updatedAt: now,
       });
     } else if (record._t === "trace_end") {
-      traceIdsToUpdate.push(record.traceId);
+      traceUpdates.push({
+        traceId: record.traceId,
+        status: record.status,
+        endedAt: record.endedAt,
+        durationMs: record.durationMs,
+      });
     }
   }
 
@@ -191,11 +248,41 @@ const TRACE_INGESTOR = new BatchIngestor<TraceRecord>(async (batch) => {
     });
   }
 
-  if (traceIdsToUpdate.length > 0) {
-    await TraceModel.update(
-      { updatedAt: now },
-      { where: { id: traceIdsToUpdate } }
-    );
+  if (traceUpdates.length > 0) {
+    // Batch update all traces in a single query using raw SQL with VALUES clause
+    const sequelize = getDBConnection();
+    const bindParams: any[] = [now];
+    const valuePlaceholders: string[] = [];
+
+    traceUpdates.forEach((update, index) => {
+      const baseIndex = index * 4 + 2; // +2 because $1 is 'now'
+      const status = update.status ? update.status.toLowerCase() : null;
+      const endedAt = update.endedAt
+        ? new Date(update.endedAt).toISOString()
+        : null;
+      const durationMs = update.durationMs ?? null;
+
+      valuePlaceholders.push(
+        `($${baseIndex}::uuid, $${baseIndex + 1}::text, $${baseIndex + 2}::timestamp, $${baseIndex + 3}::integer)`
+      );
+      bindParams.push(update.traceId, status, endedAt, durationMs);
+    });
+
+    const query = `
+      UPDATE traces AS t
+      SET
+        status = COALESCE(v.status, t.status),
+        ended_at = COALESCE(v.ended_at, t.ended_at),
+        duration_ms = COALESCE(v.duration_ms, t.duration_ms),
+        updated_at = $1
+      FROM (VALUES ${valuePlaceholders.join(", ")}) AS v(id, status, ended_at, duration_ms)
+      WHERE t.id = v.id
+    `;
+
+    await sequelize.query(query, {
+      bind: bindParams,
+      type: sequelize.QueryTypes.UPDATE,
+    });
   }
 });
 
@@ -239,7 +326,9 @@ const STEP_NO_REF_INGESTOR = new BatchIngestor<SpanStartRecord>(
         ],
       });
     }
-  }
+  },
+  // Pre-flush: ensure traces exist before creating steps
+  async () => await TRACE_INGESTOR.flush()
 );
 
 const STEP_WITH_REF_INGESTOR = new BatchIngestor<SpanStartRecord>(
@@ -282,6 +371,11 @@ const STEP_WITH_REF_INGESTOR = new BatchIngestor<SpanStartRecord>(
         ],
       });
     }
+  },
+  // Pre-flush: ensure traces and parent steps exist
+  async () => {
+    await TRACE_INGESTOR.flush();
+    await STEP_NO_REF_INGESTOR.flush();
   }
 );
 
@@ -320,10 +414,49 @@ const STEP_UPDATE_INGESTOR = new BatchIngestor<SpanEndRecord>(async (batch) => {
   }
 
   if (updates.length > 0) {
-    const promises = updates.map(({ spanId, updates }) =>
-      Step.update(updates, { where: { id: spanId } })
-    );
-    await Promise.all(promises);
+    // Batch update all steps in a single query using raw SQL with VALUES clause
+    const sequelize = getDBConnection();
+    const bindParams: any[] = [now];
+    const valuePlaceholders: string[] = [];
+
+    updates.forEach(({ spanId, updates: updateData }, index) => {
+      const baseIndex = index * 5 + 2; // +2 because $1 is 'now'
+      const endedAt = updateData.endedAt
+        ? new Date(updateData.endedAt).toISOString()
+        : null;
+      const durationMs = updateData.durationMs ?? null;
+      const errorJson = updateData.error
+        ? JSON.stringify(updateData.error)
+        : null;
+
+      valuePlaceholders.push(
+        `($${baseIndex}::uuid, $${baseIndex + 1}::text, $${baseIndex + 2}::timestamp, $${baseIndex + 3}::integer, $${baseIndex + 4}::jsonb)`
+      );
+      bindParams.push(
+        spanId,
+        updateData.status,
+        endedAt,
+        durationMs,
+        errorJson
+      );
+    });
+
+    const query = `
+      UPDATE steps AS s
+      SET
+        status = v.status,
+        ended_at = v.ended_at,
+        duration_ms = v.duration_ms,
+        error = v.error,
+        updated_at = $1
+      FROM (VALUES ${valuePlaceholders.join(", ")}) AS v(id, status, ended_at, duration_ms, error)
+      WHERE s.id = v.id
+    `;
+
+    await sequelize.query(query, {
+      bind: bindParams,
+      type: sequelize.QueryTypes.UPDATE,
+    });
   }
 });
 
@@ -373,6 +506,12 @@ const EVENT_INGESTOR = new BatchIngestor<EventRecord | TraceEventRecord>(
     if (eventsToCreate.length > 0) {
       await EventModel.bulkCreate(eventsToCreate);
     }
+  },
+  // Pre-flush: ensure traces and steps exist before creating events
+  async () => {
+    await TRACE_INGESTOR.flush();
+    await STEP_NO_REF_INGESTOR.flush();
+    await STEP_WITH_REF_INGESTOR.flush();
   }
 );
 
@@ -410,7 +549,19 @@ export class Tracer {
     traceId: string,
     startedAt?: ISODate
   ): Trace {
-    return new Trace(projectId, requestId, traceId, startedAt ?? nowISO());
+    const effectiveStartedAt = startedAt ?? nowISO();
+
+    // Enqueue trace_start to ensure the trace exists in DB
+    // This uses upsert behavior, so it's safe to call multiple times
+    TRACE_INGESTOR.enqueue({
+      _t: "trace_start",
+      traceId,
+      projectId,
+      requestId,
+      startedAt: effectiveStartedAt,
+    });
+
+    return new Trace(projectId, requestId, traceId, effectiveStartedAt);
   }
 
   static async flush(): Promise<void> {
