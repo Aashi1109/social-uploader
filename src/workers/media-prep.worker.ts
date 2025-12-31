@@ -4,7 +4,7 @@ import { PublishJobData } from "@/shared/types/publish";
 import { PLATFORM_TYPES } from "@/shared/constants";
 import { logger } from "@/core/logger";
 import config from "@/config";
-import { join, extname, basename } from "node:path";
+import { join, extname } from "node:path";
 import { stat, mkdir } from "node:fs/promises";
 import ffmpeg from "fluent-ffmpeg";
 import type { FfprobeData } from "fluent-ffmpeg";
@@ -12,7 +12,6 @@ import ffmpegPath from "ffmpeg-static";
 import ffprobePath from "ffprobe-static";
 import sharp from "sharp";
 import { JsonSchema } from "@/shared/types/json";
-import { isEmpty } from "@/shared/utils";
 import {
   validateMediaConstraints,
   MediaInfo,
@@ -34,30 +33,64 @@ interface MediaPrepResult {
   converted: boolean;
 }
 
-enum UploadTypes {
-  ShortVideos = "short-videos",
-  LongVideos = "long-videos",
-  Image = "image",
-}
-
-const getMediaUploadConfig = (
+/**
+ * Extract platform-specific media requirements based on platform type and media type
+ */
+function getPlatformRequirements(
   platformType: PLATFORM_TYPES,
-  config: JsonSchema
-) => {
-  switch (platformType) {
-    case PLATFORM_TYPES.INSTAGRAM:
-      return "image";
-    case PLATFORM_TYPES.YOUTUBE: {
-      const uploadType = config.uploadType;
-      const uploadConfig = config[uploadType];
+  platformConfig: JsonSchema,
+  mediaType: MediaType
+): MediaRequirements {
+  const requirements = platformConfig.requirements as
+    | MediaRequirements
+    | { video?: MediaRequirements; image?: MediaRequirements };
 
-      if (isEmpty(uploadConfig)) throw new Error(`Upload config missing`);
-      return uploadConfig;
+  switch (platformType) {
+    case PLATFORM_TYPES.INSTAGRAM: {
+      // Instagram has nested requirements: requirements.video or requirements.image
+      if (
+        typeof requirements === "object" &&
+        requirements !== null &&
+        !Array.isArray(requirements)
+      ) {
+        const nestedReqs = requirements as {
+          video?: MediaRequirements;
+          image?: MediaRequirements;
+        };
+        const mediaSpecificReqs =
+          mediaType === "video" ? nestedReqs.video : nestedReqs.image;
+
+        if (!mediaSpecificReqs) {
+          throw new Error(
+            `No ${mediaType} requirements found for Instagram platform`
+          );
+        }
+        return mediaSpecificReqs;
+      }
+      throw new Error("Invalid Instagram requirements structure");
+    }
+    case PLATFORM_TYPES.YOUTUBE: {
+      // YouTube has requirements at root level
+      if (
+        typeof requirements === "object" &&
+        requirements !== null &&
+        !Array.isArray(requirements)
+      ) {
+        // Check if it's already a MediaRequirements object (not nested)
+        if (
+          "formats" in requirements ||
+          "maxDurationSeconds" in requirements ||
+          "videoCodecs" in requirements
+        ) {
+          return requirements as MediaRequirements;
+        }
+      }
+      throw new Error("Invalid YouTube requirements structure");
     }
     default:
-      throw new Error("Invalid platform type");
+      throw new Error(`Unsupported platform type: ${platformType}`);
   }
-};
+}
 
 export default function MediaPrepWorker() {
   createWorker<PublishJobData, MediaPrepResult>("media-prep", async (job) => {
@@ -76,17 +109,27 @@ export default function MediaPrepWorker() {
     try {
       // Get platform-specific media requirements
       const platformService = new PlatformService();
-      const { config, type } = await platformService.getById(platformId, true);
-
-      const uploadType = config.uploadType;
-      const requirements = config.requirements as MediaRequirements;
+      const { config: platformConfig, type: platformType } =
+        await platformService.getById(platformId, true);
 
       // Get enforceConstraints setting (default to false for auto-format mode)
-      const enforceConstraints = config.enforceConstraints === true;
+      const enforceConstraints = platformConfig.enforceConstraints === true;
 
-      // Detect media type
+      // Detect media type first (needed to extract correct requirements)
       const mediaType = detectMediaType(filePath);
-      logger.debug({ traceId, mediaType }, "Media type detected");
+      logger.debug({ traceId, mediaType, platformType }, "Media type detected");
+
+      // Extract platform-specific requirements based on media type
+      const requirements = getPlatformRequirements(
+        platformType,
+        platformConfig,
+        mediaType
+      );
+
+      logger.debug(
+        { traceId, platformType, mediaType, hasRequirements: !!requirements },
+        "Platform requirements extracted"
+      );
 
       // Inspect the media file
       const mediaInfo =
@@ -100,7 +143,7 @@ export default function MediaPrepWorker() {
       const validationResult = validateMediaConstraints(
         mediaInfo,
         requirements,
-        type,
+        platformType,
         enforceConstraints
       );
 
@@ -437,10 +480,18 @@ async function convertVideo(
       // Parse aspect ratio (can be string like "0.5625" or "9/16")
       let targetAspectRatio: number;
       if (targetSpecs.aspectRatio.includes("/")) {
-        const [arWidth, arHeight] = targetSpecs.aspectRatio
-          .split("/")
-          .map(Number);
-        targetAspectRatio = arWidth / arHeight;
+        const parts = targetSpecs.aspectRatio.split("/");
+        if (parts.length >= 2) {
+          const arWidth = Number(parts[0]);
+          const arHeight = Number(parts[1]);
+          if (arWidth && arHeight) {
+            targetAspectRatio = arWidth / arHeight;
+          } else {
+            targetAspectRatio = parseFloat(targetSpecs.aspectRatio);
+          }
+        } else {
+          targetAspectRatio = parseFloat(targetSpecs.aspectRatio);
+        }
       } else {
         targetAspectRatio = parseFloat(targetSpecs.aspectRatio);
       }
